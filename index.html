@@ -115,6 +115,23 @@ textarea.inp{resize:none}
 .empty{text-align:center;color:#aaa;padding:36px;font-size:14px}
 .toast-box{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);background:#1c2e1c;color:#e8e4d8;padding:10px 20px;border-radius:20px;font-size:13px;z-index:200;pointer-events:none;opacity:0;transition:opacity .3s;white-space:nowrap}
 .toast-box.show{opacity:1}
+.badge-st{font-size:10px;padding:1px 7px;border-radius:10px;border:1px solid;background:#fff;white-space:nowrap}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg-grid{display:grid;grid-template-columns:1fr 1fr}
+.seg-b{flex:1;padding:10px 8px;border-radius:8px;border:2px solid #ddd8cc;background:#f5f2ec;color:#444;cursor:pointer;font-size:13px;font-family:Georgia,serif}
+.seg-b.on{background:#4a7c59;border-color:#4a7c59;color:#fff;font-weight:bold}
+.dep-auto{font-size:12px;color:#2d5a27;background:#e8f4e8;border-radius:6px;padding:7px 10px}
+.fact{display:flex;gap:8px;padding:10px 0;border-bottom:1px solid #eee}
+.big-row{display:flex;gap:10px;margin-bottom:12px}
+.big{flex:1;text-align:center;background:#f5f0e6;border-radius:8px;padding:10px 6px}
+.big-v{font-size:20px;font-weight:bold;color:#1c2e1c}
+.big-l{font-size:10px;color:#888;margin-top:2px}
+.note{font-size:12px;color:#666;line-height:1.5}
+.btn-exp{flex:1;padding:10px;border-radius:8px;border:none;background:#2d5a27;color:#fff;font-weight:bold;cursor:pointer;font-family:Georgia,serif;font-size:13px}
+.btn-exp2{background:#fff;color:#2d5a27;border:1px solid #2d5a27}
+.fchk{display:flex;gap:8px;align-items:flex-start;font-size:12px;padding:6px 0;border-bottom:1px solid #f0ece4;cursor:pointer}
+.fchk input{width:18px;height:18px;flex-shrink:0;margin-top:1px}
+.tbl-tight{font-size:11px}.tbl-tight th{padding:6px 4px;font-size:9px}.tbl-tight td{padding:6px 4px}.tbl-tight td:first-child{padding-left:10px}
 </style>
 </head>
 <body>
@@ -122,69 +139,94 @@ textarea.inp{resize:none}
 <div class="toast-box" id="toast"></div>
 <script>
 // ═══════════════════════════════════════════
-// CONFIG
+// CONFIG  (connexion Google et fichier de données : inchangés)
 // ═══════════════════════════════════════════
 const CLIENT_ID = "967084691763-oo1vium2msv1svm44ap0n0pdejg3n07b.apps.googleusercontent.com";
 const SCOPES    = "https://www.googleapis.com/auth/drive.appdata";
 const FILE_NAME = "qualisilva-data.json";
-const TAUX_KM   = 0.5;
-const ADRESSE   = "11 rue de Mayenne, Sarthe";
+const ADRESSE   = "11 rue de Mayenne, 72140 Sillé-le-Guillaume";
 const PALETTE   = ["#2d5a27","#4a7c59","#6b8f71","#8b6914","#5c7a8a","#7a5c8a","#b05030","#2a6080","#888","#3a3a6a"];
+const REGLAGES_DEFAUT = {tauxJour:550, heuresJour:8, tauxKm:0.5, tauxCotis:25.8, prixBombe:0};
+const STATUTS = [
+  {v:"facturer", l:"À facturer",     c:"#c0392b"},
+  {v:"facture",  l:"Facturé",        c:"#2d5a27"},
+  {v:"offert",   l:"Offert",         c:"#8b6914"},
+  {v:"nonfact",  l:"Non facturable", c:"#888"},
+];
 
 // ═══════════════════════════════════════════
 // ÉTAT GLOBAL
 // ═══════════════════════════════════════════
 let S = {
   screen:"login", view:"journal",
-  entries:[], tags:[
+  entries:[], factures:[], reglages:{...REGLAGES_DEFAUT},
+  tags:[
     {label:"Prospection",color:"#4a7c59"},
     {label:"Martelage",color:"#2d5a27"},
     {label:"Analyse/Rédaction",color:"#6b8f71"},
     {label:"Formation/Veille",color:"#8b6914"},
     {label:"Admin",color:"#7a5c8a"},
   ],
-  filterTag:"Tous", filterDos:"Tous",
-  editId:null, form:null, showDep:false,
+  filterTag:"Tous", filterDos:"Tous", filterStatut:"Tous",
+  year:String(new Date().getFullYear()),
+  editId:null, form:null, showDep:false, depAuto:false,
+  factForm:null, factEditId:null,
   newTagLbl:"", newTagCol:"#4a7c59",
   editTagI:null, editTagV:"",
   syncStatus:"ok", token:null, fileId:null,
 };
 
-const SEED = [
-  {id:1,date:"2025-03-19",description:"Rencontre client à Brissac-Quincé",tag:"Prospection",dossier:"Brissac",heures:8,
-   deplacement:{adresseDepart:ADRESSE,adresseArrivee:"L'Échasserie, Terranjou",km:145,peage:10.9,allerRetour:true},
-   depenses:[],recettes:[],remarque:"Premier contact, visite non facturée"},
-  {id:2,date:"2025-04-01",description:"Lecture PSG + préparation visite forêt Brissac",tag:"Analyse/Rédaction",dossier:"Brissac",heures:2.5,
-   deplacement:null,depenses:[],recettes:[],remarque:"2h30 de préparation"},
-  {id:3,date:"2025-04-02",description:"Visite forêt de Brissac-Quincé",tag:"Martelage",dossier:"Brissac",heures:8,
-   deplacement:{adresseDepart:ADRESSE,adresseArrivee:"L'Échasserie, Terranjou",km:145,peage:10.9,allerRetour:true},
-   depenses:[],recettes:[],remarque:"Journée offerte au client"},
-  {id:4,date:"2025-04-06",description:"Travail dossier Brissac — contrat + analyse parcelles",tag:"Analyse/Rédaction",dossier:"Brissac",heures:8,
-   deplacement:null,depenses:[{libelle:"Journée de travail (coût interne)",montant:550}],recettes:[],remarque:"Journée bureau"},
-  {id:5,date:"2025-04-07",description:"Martelage forêt de Brissac-Quincé",tag:"Martelage",dossier:"Brissac",heures:8,
-   deplacement:{adresseDepart:ADRESSE,adresseArrivee:"L'Échasserie, Terranjou",km:145,peage:10.9,allerRetour:true},
-   depenses:[],recettes:[{libelle:"Journée de martelage",montant:550},{libelle:"Remboursement km",montant:145*0.5},{libelle:"Remboursement péage",montant:10.9}],remarque:""},
-  {id:6,date:"2025-04-09",description:"Forêt d'Écouves — rencontre spécialistes",tag:"Formation/Veille",dossier:"Veille",heures:8,
-   deplacement:{adresseDepart:ADRESSE,adresseArrivee:"Forêt d'Écouves, Orne",km:130,peage:0,allerRetour:true},
-   depenses:[],recettes:[],remarque:"Formation/réseau, non facturé"},
-  {id:7,date:"2025-04-13",description:"Analyse données martelage + rédaction CR + cubage",tag:"Analyse/Rédaction",dossier:"Brissac",heures:6,
-   deplacement:null,depenses:[{libelle:"6h travail (6/8×550€)",montant:412.5}],recettes:[],remarque:""},
-  {id:8,date:"2025-04-14",description:"Martelage forêt de Brissac-Quincé",tag:"Martelage",dossier:"Brissac",heures:8,
-   deplacement:{adresseDepart:ADRESSE,adresseArrivee:"L'Échasserie, Terranjou",km:145,peage:10.9,allerRetour:true},
-   depenses:[],recettes:[{libelle:"Journée de martelage",montant:550},{libelle:"Remboursement km",montant:145*0.5},{libelle:"Remboursement péage",montant:10.9}],remarque:""},
-];
+// ═══════════════════════════════════════════
+// MIGRATION des anciennes données (rien n'est supprimé :
+// les anciens champs « dépenses / recettes » sont rangés dans « ancien »)
+// ═══════════════════════════════════════════
+function migrateData(data){
+  data=data||{};
+  const tags=Array.isArray(data.tags)&&data.tags.length?data.tags:S.tags;
+  const reglages={...REGLAGES_DEFAUT,...(data.reglages||{})};
+  const factures=Array.isArray(data.factures)?data.factures:[];
+  const entries=(data.entries||[]).map(e=>{
+    if(Array.isArray(e.tags)) return {intervenants:1,statut:"facturer",bombes:0,frais:[],deplacement:null,remarque:"",dossier:"",...e};
+    const nonFact=["Prospection","Formation/Veille"].includes(e.tag)||!e.dossier;
+    return {
+      id:e.id, date:e.date, heures:Number(e.heures)||0, description:e.description||"",
+      tags:e.tag?[e.tag]:[], dossier:e.dossier||"",
+      intervenants:1, statut:nonFact?"nonfact":"facturer",
+      deplacement:e.deplacement||null, bombes:0, frais:[],
+      remarque:e.remarque||"",
+      ancien:{tag:e.tag, depenses:e.depenses||[], recettes:e.recettes||[]},
+    };
+  });
+  return {version:2, entries, tags, factures, reglages};
+}
+const dataToSave = () => ({version:2, entries:S.entries, tags:S.tags, factures:S.factures, reglages:S.reglages});
 
 // ═══════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════
-const calcKm    = d => d ? (parseFloat(d.km)||0) * TAUX_KM : 0;
-const calcPeage = d => d ? (parseFloat(d.peage)||0) : 0;
-const totDep    = e => e.depenses.reduce((s,d)=>s+d.montant,0) + calcKm(e.deplacement) + calcPeage(e.deplacement);
-const totRec    = e => e.recettes.reduce((s,r)=>s+r.montant,0);
-const fmt  = n  => Number(n).toFixed(2).replace(".",",")+"\u00a0€";
-const fmtD = d  => { const [y,m,day]=d.split("-"); return `${day}/${m}/${y}`; };
+const R = () => S.reglages;
+const tauxH    = () => R().tauxJour/R().heuresJour;
+const num      = v => Number(v)||0;
+const parseNum = str => parseFloat(String(str??"").replace(",","."))||0;
+const fraisKm  = e => e.deplacement ? num(e.deplacement.km)*R().tauxKm : 0;
+const peage    = e => e.deplacement ? num(e.deplacement.peage) : 0;
+const fraisConso = e => num(e.bombes)*R().prixBombe;
+const fraisAutres= e => (e.frais||[]).reduce((s,f)=>s+num(f.montant),0);
+const fraisTot = e => fraisKm(e)+peage(e)+fraisConso(e)+fraisAutres(e);
+const valeurTemps = e => num(e.heures)*tauxH();
+const valeurFacturable = e => num(e.heures)*tauxH()*(num(e.intervenants)||1);
+const valeurEntree = e => (e.statut==="facturer"||e.statut==="facture")?valeurFacturable(e):valeurTemps(e);
+const fmt  = n => (Math.round(Number(n||0)*100)/100).toFixed(2).replace(".",",").replace(/\B(?=(\d{3})+(?!\d))/g," ")+" €";
+const fmt0 = n => Math.round(Number(n||0)).toString().replace(/\B(?=(\d{3})+(?!\d))/g," ")+" €";
+const fmtH = h => (Math.round(Number(h||0)*100)/100).toString().replace(".",",")+" h";
+const fmtD = d => { const [y,m,day]=(d||"").split("-"); return `${day}/${m}/${y}`; };
+const esc  = s => String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 const tagCol = lbl => (S.tags.find(t=>t.label===lbl)||{color:"#888"}).color;
-const dossiers = () => [...new Set(S.entries.map(e=>e.dossier).filter(Boolean))];
+const statut = v => STATUTS.find(s=>s.v===v)||STATUTS[0];
+const dossiers = () => [...new Set([...S.entries.map(e=>e.dossier),...S.factures.map(f=>f.dossier)].filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+const years = () => [...new Set([...S.entries.map(e=>(e.date||"").slice(0,4)),...S.factures.map(f=>(f.date||"").slice(0,4)),String(new Date().getFullYear())].filter(Boolean))].sort().reverse();
+const inYear = d => (d||"").slice(0,4)===S.year;
+const today = () => new Date().toISOString().slice(0,10);
 let toastTimer;
 const toast = msg => {
   const t=document.getElementById("toast");
@@ -193,44 +235,7 @@ const toast = msg => {
 };
 
 // ═══════════════════════════════════════════
-// EXPORT (lecture seule : ne modifie ni ne sauvegarde aucune donnée)
-// ═══════════════════════════════════════════
-function downloadFile(name, content, mime){
-  const blob=new Blob([content],{type:mime});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url; a.download=name; document.body.appendChild(a); a.click();
-  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},1000);
-}
-const exportStamp = () => new Date().toISOString().slice(0,10);
-function exportJSON(){
-  const data={exporte_le:new Date().toISOString(),entries:S.entries,tags:S.tags};
-  downloadFile(`qualisilva-export-${exportStamp()}.json`, JSON.stringify(data,null,2), "application/json");
-  toast("⬇ Export JSON téléchargé");
-}
-function exportCSV(){
-  const q = v => { const t=(v===null||v===undefined)?"":String(v); return '"'+t.replace(/"/g,'""')+'"'; };
-  const num = n => (Math.round((Number(n)||0)*100)/100).toString().replace(".",",");
-  const head=["Date","Tag","Dossier","Description","Heures","Km","Péage","Aller-retour","Frais km","Total dépenses","Détail dépenses","Total recettes","Détail recettes","Remarque"];
-  const rows=[...S.entries].sort((a,b)=>a.date.localeCompare(b.date)).map(e=>{
-    const d=e.deplacement;
-    return [
-      e.date, e.tag, e.dossier||"", e.description||"", num(e.heures),
-      d?num(d.km):"", d?num(d.peage):"", d?(d.allerRetour?"oui":"non"):"",
-      num(calcKm(d)), num(totDep(e)),
-      (e.depenses||[]).map(x=>`${x.libelle} : ${num(x.montant)}`).join(" | "),
-      num(totRec(e)),
-      (e.recettes||[]).map(x=>`${x.libelle} : ${num(x.montant)}`).join(" | "),
-      e.remarque||""
-    ].map(q).join(";");
-  });
-  const csv="\ufeff"+[head.map(q).join(";"),...rows].join("\r\n");
-  downloadFile(`qualisilva-export-${exportStamp()}.csv`, csv, "text/csv;charset=utf-8");
-  toast("⬇ Export CSV téléchargé");
-}
-
-// ═══════════════════════════════════════════
-// GOOGLE DRIVE
+// GOOGLE DRIVE (inchangé, sauf le contenu sauvegardé)
 // ═══════════════════════════════════════════
 let saveTimer=null;
 function scheduleSave(){
@@ -241,11 +246,12 @@ function scheduleSave(){
 async function doSave(){
   if(!S.token||!S.fileId)return;
   try{
-    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${S.fileId}?uploadType=media`,{
+    const r=await fetch(`https://www.googleapis.com/upload/drive/v3/files/${S.fileId}?uploadType=media`,{
       method:"PATCH",
       headers:{Authorization:"Bearer "+S.token,"Content-Type":"application/json"},
-      body:JSON.stringify({entries:S.entries,tags:S.tags})
+      body:JSON.stringify(dataToSave())
     });
+    if(!r.ok) throw new Error("HTTP "+r.status);
     setSyncDot("ok"); toast("✓ Sauvegardé");
   }catch(e){setSyncDot("err"); toast("⚠ Erreur de sauvegarde");}
 }
@@ -275,39 +281,68 @@ async function driveLoad(token){
     const r2=await fetch("https://www.googleapis.com/drive/v3/files/"+S.fileId+"?alt=media",{headers:{Authorization:"Bearer "+token}});
     return await r2.json();
   }else{
-    const data={entries:SEED,tags:S.tags};
+    const data=dataToSave();
     const meta=JSON.stringify({name:FILE_NAME,parents:["appDataFolder"]});
-    const body=JSON.stringify(data);
     const form=new FormData();
     form.append("metadata",new Blob([meta],{type:"application/json"}));
-    form.append("file",new Blob([body],{type:"application/json"}));
+    form.append("file",new Blob([JSON.stringify(data)],{type:"application/json"}));
     const r2=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",{method:"POST",headers:{Authorization:"Bearer "+token},body:form});
     const j2=await r2.json();
     S.fileId=j2.id;
     return data;
   }
 }
-
-// ═══════════════════════════════════════════
-// CALCUL DÉPLACEMENT (avec A/R)
-// ═══════════════════════════════════════════
-function depKmMontant(dep){
-  if(!dep) return 0;
-  const km = parseFloat(dep.km)||0;
-  return km * TAUX_KM; // km déjà en A/R si la case est cochée (l'utilisateur saisit le total)
-}
-function depPreview(dep){
-  if(!dep) return "";
-  const km=parseFloat(dep.km)||0;
-  const pe=parseFloat(dep.peage)||0;
-  const kmM=km*TAUX_KM;
-  const total=kmM+pe;
-  if(km===0&&pe===0) return "";
-  return `${km}\u00a0km × ${TAUX_KM}\u00a0€ = <strong>${fmt(kmM)}</strong>${pe>0?` · Péage\u00a0<strong>${fmt(pe)}</strong>`:""} &nbsp;→&nbsp; <strong>Total\u00a0: ${fmt(total)}</strong>`;
+function applyData(data){
+  const d=migrateData(data);
+  S.entries=d.entries; S.tags=d.tags; S.factures=d.factures; S.reglages=d.reglages;
 }
 
 // ═══════════════════════════════════════════
-// RENDU PRINCIPAL (sans re-render sur frappe)
+// CALCULS — les 3 niveaux d'analyse (année sélectionnée)
+// ═══════════════════════════════════════════
+function calcAnalyse(){
+  const E=S.entries.filter(e=>inYear(e.date));
+  const F=S.factures.filter(f=>inYear(f.date));
+  const sum=(arr,fn)=>arr.reduce((s,x)=>s+fn(x),0);
+  const heures=sum(E,e=>num(e.heures));
+  const valeur=heures*tauxH();
+  // Niveau 1 : par client et par activité (heures réparties entre les tags d'une entrée)
+  const parClient={};
+  const cl=d=>parClient[d]??={h:0,valeur:0,valeur2:0,aFacturer:0,offert:0,nonfact:0,facture:0,frais:0};
+  E.forEach(e=>{
+    const c=cl(e.dossier||"(sans client)");
+    c.h+=num(e.heures); c.valeur+=valeurTemps(e); c.valeur2+=valeurEntree(e); c.frais+=fraisTot(e);
+    if(e.statut==="facturer") c.aFacturer+=valeurFacturable(e);
+    else if(e.statut==="offert") c.offert+=valeurTemps(e);
+    else if(e.statut==="nonfact") c.nonfact+=valeurTemps(e);
+  });
+  F.forEach(f=>{cl(f.dossier||"(sans client)").facture+=num(f.honoraires);});
+  const parTag={};
+  E.forEach(e=>{const t=e.tags&&e.tags.length?e.tags:["(sans activité)"];t.forEach(l=>{parTag[l]=(parTag[l]||0)+num(e.heures)/t.length;});});
+  // Niveau 2
+  const honoraires=sum(F,f=>num(f.honoraires));
+  const fraisFactures=sum(F,f=>num(f.frais));
+  const offert=sum(E.filter(e=>e.statut==="offert"),valeurTemps);
+  const nonfact=sum(E.filter(e=>e.statut==="nonfact"),valeurTemps);
+  const resteAFacturer=sum(E.filter(e=>e.statut==="facturer"),valeurFacturable);
+  const valeur2=sum(E,valeurEntree);
+  // Niveau 3
+  const ca=honoraires+fraisFactures;
+  const cotis=ca*R().tauxCotis/100;
+  const route=sum(E,e=>fraisKm(e)+peage(e));
+  const conso=sum(E,fraisConso);
+  const autres=sum(E,fraisAutres);
+  const net=ca-cotis-route-conso-autres;
+  const netSiFacture=net+resteAFacturer*(1-R().tauxCotis/100);
+  const encaisse=sum(F,f=>num(f.encaisse));
+  return {E,F,heures,valeur,parClient,parTag,honoraires,fraisFactures,offert,nonfact,resteAFacturer,
+          ca,cotis,route,conso,autres,net,netH:heures>0?net/heures:0,
+          netSiFacture,netSiFactureH:heures>0?netSiFacture/heures:0,
+          valeur2,taux:valeur2>0?honoraires/valeur2:0,encaisse,cotisEncaisse:encaisse*R().tauxCotis/100};
+}
+
+// ═══════════════════════════════════════════
+// RENDU
 // ═══════════════════════════════════════════
 function render(){
   const app=document.getElementById("app");
@@ -334,7 +369,7 @@ function renderLogin(){return `
 </div>`;}
 
 function renderApp(){
-  const st=calcStats();
+  const a=calcAnalyse();
   return `
 <div class="hdr">
   <div class="hdr-top">
@@ -342,43 +377,51 @@ function renderApp(){
     <button class="btn-saisir" id="btn-new">+ Saisir</button>
   </div>
   <div class="kpis">
-    <div class="kpi"><div class="kpi-l">Recettes</div><div class="kpi-v" style="color:#5fb87a">${fmt(st.tr)}</div></div>
-    <div class="kpi"><div class="kpi-l">Dépenses</div><div class="kpi-v" style="color:#e07070">${fmt(st.td)}</div></div>
-    <div class="kpi"><div class="kpi-l">Solde</div><div class="kpi-v" style="color:${st.solde>=0?"#5fb87a":"#e07070"}">${fmt(st.solde)}</div></div>
-    <div class="kpi"><div class="kpi-l">TJM</div><div class="kpi-v" style="color:#c8b46a">${st.th>0?fmt(st.tjm).replace("\u00a0€","")+"\u00a0€/j":"—"}</div></div>
+    <div class="kpi"><div class="kpi-l">Heures ${S.year}</div><div class="kpi-v" style="color:#e8e4d8">${fmtH(a.heures)}</div></div>
+    <div class="kpi"><div class="kpi-l">Valeur temps</div><div class="kpi-v" style="color:#c8b46a">${fmt0(a.valeur)}</div></div>
+    <div class="kpi"><div class="kpi-l">Facturé</div><div class="kpi-v" style="color:#5fb87a">${fmt0(a.honoraires)}</div></div>
+    <div class="kpi"><div class="kpi-l">Net / heure</div><div class="kpi-v" style="color:${a.netH>=0?"#5fb87a":"#e07070"}">${a.heures>0?fmt(a.netH):"—"}</div></div>
   </div>
 </div>
 <div class="main" id="main-content">
-  ${S.view==="journal" ? renderJournal(st) : ""}
-  ${S.view==="saisie"  ? renderSaisie()    : ""}
-  ${S.view==="analyse" ? renderAnalyse(st) : ""}
-  ${S.view==="tags"    ? renderTags(st)    : ""}
+  ${S.view==="journal"  ? renderJournal()   : ""}
+  ${S.view==="saisie"   ? renderSaisie()    : ""}
+  ${S.view==="factures" ? renderFactures()  : ""}
+  ${S.view==="analyse"  ? renderAnalyse(a)  : ""}
+  ${S.view==="reglages" ? renderReglages()  : ""}
 </div>
 <div class="nav">
-  <button class="nav-b ${S.view==="journal"?"on":""}" id="nav-journal"><span class="nav-ico">📋</span>Journal</button>
+  <button class="nav-b ${S.view==="journal"||S.view==="saisie"?"on":""}" id="nav-journal"><span class="nav-ico">📋</span>Journal</button>
+  <button class="nav-b ${S.view==="factures"?"on":""}" id="nav-factures"><span class="nav-ico">🧾</span>Factures</button>
   <button class="nav-b ${S.view==="analyse"?"on":""}" id="nav-analyse"><span class="nav-ico">📊</span>Analyses</button>
-  <button class="nav-b ${S.view==="tags"?"on":""}"    id="nav-tags"><span class="nav-ico">🏷</span>Tags</button>
+  <button class="nav-b ${S.view==="reglages"?"on":""}" id="nav-reglages"><span class="nav-ico">⚙️</span>Réglages</button>
 </div>`;}
 
-function renderJournal(st){
+// ── JOURNAL ──
+function renderJournal(){
   const dos=dossiers();
   const filtered=S.entries
-    .filter(e=>S.filterTag==="Tous"||e.tag===S.filterTag)
+    .filter(e=>S.filterTag==="Tous"||(e.tags||[]).includes(S.filterTag))
     .filter(e=>S.filterDos==="Tous"||e.dossier===S.filterDos)
-    .sort((a,b)=>b.date.localeCompare(a.date));
+    .filter(e=>S.filterStatut==="Tous"||e.statut===S.filterStatut)
+    .sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id);
   return `
 <div class="fscroll">
-  ${["Tous",...S.tags.map(t=>t.label)].map(t=>`<button class="fbtn${S.filterTag===t?" on":""}" style="${S.filterTag===t?"background:"+(t==="Tous"?"#4a7c59":tagCol(t))+";"  :""}" data-ftag="${t}">${t}</button>`).join("")}
+  ${["Tous",...S.tags.map(t=>t.label)].map(t=>`<button class="fbtn${S.filterTag===t?" on":""}" style="${S.filterTag===t?"background:"+(t==="Tous"?"#4a7c59":tagCol(t))+";":""}" data-ftag="${esc(t)}">${esc(t)}</button>`).join("")}
 </div>
-${dos.length>1?`<div class="fscroll">${["Tous",...dos].map(d=>`<button class="fbtn${S.filterDos===d?" on":""}" style="${S.filterDos===d?"background:#2d5a27;":""}" data-fdos="${d}">${d}</button>`).join("")}</div>`:""}
+<div class="fscroll">
+  ${[{v:"Tous",l:"Tous statuts",c:"#4a7c59"},...STATUTS].map(s=>`<button class="fbtn${S.filterStatut===s.v?" on":""}" style="${S.filterStatut===s.v?"background:"+s.c+";":""}" data-fstat="${s.v}">${s.l}</button>`).join("")}
+</div>
+${dos.length>1?`<div class="fscroll">${["Tous",...dos].map(d=>`<button class="fbtn${S.filterDos===d?" on":""}" style="${S.filterDos===d?"background:#2d5a27;":""}" data-fdos="${esc(d)}">${esc(d==="Tous"?"Tous clients":d)}</button>`).join("")}</div>`:""}
 ${filtered.length===0?`<div class="empty">Aucune entrée</div>`:""}
-${filtered.map(entry=>{
-  const km=calcKm(entry.deplacement),pe=calcPeage(entry.deplacement);
-  const tR=totRec(entry),tD=totDep(entry),col=tagCol(entry.tag);
-  const depParts=[
-    ...entry.depenses.map(d=>`${d.libelle} (${fmt(d.montant)})`),
-    km>0?`Km${entry.deplacement?.allerRetour?" A/R":""} ${entry.deplacement?.km}\u00a0km (${fmt(km)})`:"",
-    pe>0?`Péage (${fmt(pe)})`:"",
+${filtered.map(e=>{
+  const st=statut(e.statut);
+  const col=tagCol((e.tags||[])[0]);
+  const parts=[
+    e.deplacement&&num(e.deplacement.km)>0?`🚗 ${String(e.deplacement.km).replace(".",",")} km (${fmt(fraisKm(e))})`:"",
+    peage(e)>0?`péage ${fmt(peage(e))}`:"",
+    num(e.bombes)>0?`🎨 ${String(e.bombes).replace(".",",")} bombe${num(e.bombes)>1?"s":""}${R().prixBombe>0?` (${fmt(fraisConso(e))})`:""}`:"",
+    ...(e.frais||[]).map(f=>`${esc(f.libelle)} (${fmt(f.montant)})`),
   ].filter(Boolean);
   return `<div class="entry">
   <div class="e-band" style="background:${col}"></div>
@@ -386,30 +429,37 @@ ${filtered.map(entry=>{
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div style="flex:1;min-width:0">
         <div class="e-meta">
-          <span class="e-date">${fmtD(entry.date)}</span>
-          <span class="badge" style="background:${col}">${entry.tag}</span>
-          ${entry.dossier?`<span class="badge-dos">${entry.dossier}</span>`:""}
-          <span style="font-size:11px;color:#999">${entry.heures}h</span>
+          <span class="e-date">${fmtD(e.date)}</span>
+          ${(e.tags||[]).map(t=>`<span class="badge" style="background:${tagCol(t)}">${esc(t)}</span>`).join("")}
+          ${e.dossier?`<span class="badge-dos">${esc(e.dossier)}</span>`:""}
         </div>
-        <div class="e-desc">${entry.description}</div>
-        ${tD>0?`<div class="e-dep">📤 ${depParts.join(" · ")} <strong>= ${fmt(tD)}</strong></div>`:""}
-        ${tR>0?`<div class="e-rec">📥 ${entry.recettes.map(r=>`${r.libelle} (${fmt(r.montant)})`).join(" · ")} <strong>= ${fmt(tR)}</strong></div>`:""}
-        ${entry.remarque?`<div class="e-rem">💬 ${entry.remarque}</div>`:""}
+        <div class="e-meta">
+          <span style="font-size:12px;color:#555">${fmtH(e.heures)}${num(e.intervenants)>1?" · binôme":""}</span>
+          <span class="badge-st" style="border-color:${st.c};color:${st.c}">${st.l}${e.statut==="facture"&&e.factureNum?" · "+esc(e.factureNum):""}</span>
+          <span style="font-size:11px;color:#8b6914">⏱ ${fmt(valeurEntree(e))}</span>
+        </div>
+        <div class="e-desc">${esc(e.description)}</div>
+        ${parts.length?`<div class="e-dep">📤 ${parts.join(" · ")} <strong>= ${fmt(fraisTot(e))}</strong></div>`:""}
+        ${e.remarque?`<div class="e-rem">💬 ${esc(e.remarque)}</div>`:""}
       </div>
       <div class="e-acts">
-        <button class="be" data-edit="${entry.id}" title="Modifier">✏️</button>
-        <button class="bd" data-del="${entry.id}" title="Supprimer">🗑</button>
+        <button class="be" data-edit="${e.id}" title="Modifier">✏️</button>
+        <button class="bd" data-del="${e.id}" title="Supprimer">🗑</button>
       </div>
     </div>
     <div style="margin-top:6px;text-align:right">
-      <button class="bcopy" data-copy="${entry.id}" style="font-size:11px;padding:4px 10px;border-radius:6px;background:#e8f0e8;border:none;cursor:pointer;color:#2d5a27">📋 Dupliquer</button>
+      <button class="bcopy" data-copy="${e.id}" style="font-size:11px;padding:4px 10px;border-radius:6px;background:#e8f0e8;border:none;cursor:pointer;color:#2d5a27">📋 Dupliquer</button>
     </div>
   </div>
 </div>`;}).join("")}`;
 }
 
+// ── SAISIE ──
+function fraisListHtml(){
+  return (S.form.frais||[]).map((d,i)=>`<div class="li li-d"><span class="li-lbl">${esc(d.libelle)}</span><span class="li-amt" style="color:#c0392b">${fmt(d.montant)}</span><button type="button" class="li-rm" data-rmfrais="${i}">×</button></div>`).join("");
+}
 function renderSaisie(){
-  const f=S.form;
+  const f=S.form, d=f.deplacement||{};
   return `
 <div class="form-wrap">
   <div class="form-hdr">
@@ -417,190 +467,256 @@ function renderSaisie(){
     <button class="btn-close" id="btn-cancel">×</button>
   </div>
   <div class="g2">
-    <div><label class="lbl">Date</label><input class="inp" type="date" id="f-date" value="${f.date}"></div>
-    <div><label class="lbl">Heures</label><input class="inp" type="number" id="f-heures" min="0.5" max="24" step="0.5" value="${f.heures}" inputmode="decimal"></div>
+    <div><label class="lbl">Date</label><input class="inp" type="date" id="f-date" value="${esc(f.date)}"></div>
+    <div><label class="lbl">Heures</label><input class="inp" type="text" inputmode="decimal" id="f-heures" value="${esc(String(f.heures).replace(".",","))}" autocomplete="off"></div>
   </div>
-  <div class="fg"><label class="lbl">Description</label><textarea class="inp" id="f-desc" rows="3" placeholder="Ce que tu as fait…">${f.description||""}</textarea></div>
+  <div class="fg"><label class="lbl">Description</label><textarea class="inp" id="f-desc" rows="3" placeholder="Ce que tu as fait…">${esc(f.description)}</textarea></div>
   <div class="fg">
-    <label class="lbl">Type d'activité</label>
+    <label class="lbl">Activités <span style="text-transform:none;font-weight:normal;color:#999">(plusieurs possibles)</span></label>
     <div class="tag-picker" id="tag-picker">
-      ${S.tags.map(t=>`<button type="button" class="tp${f.tag===t.label?" on":""}" style="${f.tag===t.label?`background:${t.color};border-color:${t.color}`:""}" data-tag="${t.label}">${t.label}</button>`).join("")}
+      ${S.tags.map(t=>{const on=(f.tags||[]).includes(t.label);return `<button type="button" class="tp${on?" on":""}" style="${on?`background:${t.color};border-color:${t.color}`:""}" data-tag="${esc(t.label)}">${esc(t.label)}</button>`;}).join("")}
     </div>
   </div>
   <div class="fg">
-    <label class="lbl">Dossier / Client</label>
-    <input class="inp" type="text" id="f-dos" value="${f.dossier||""}" placeholder="Ex : Brissac" list="dos-list" autocomplete="off">
-    <datalist id="dos-list">${dossiers().map(d=>`<option value="${d}">`).join("")}</datalist>
+    <label class="lbl">Client</label>
+    <input class="inp" type="text" id="f-dos" value="${esc(f.dossier)}" placeholder="Choisir ou taper un nouveau client" list="dos-list" autocomplete="off">
+    <datalist id="dos-list">${dossiers().map(x=>`<option value="${esc(x)}">`).join("")}</datalist>
+  </div>
+  <div class="fg"><label class="lbl">Statut</label>
+    <div class="seg seg-grid" id="seg-st">${STATUTS.map(s=>`<button type="button" class="seg-b${f.statut===s.v?" on":""}" data-st="${s.v}" style="${f.statut===s.v?`background:${s.c};border-color:${s.c}`:""}">${s.l}</button>`).join("")}</div>
+  </div>
+  <div class="fg"><label class="lbl">Intervenants</label>
+    <div class="seg" id="seg-int">${[1,2].map(n=>`<button type="button" class="seg-b${num(f.intervenants||1)===n?" on":""}" data-int="${n}">${n===1?"Seule":"Binôme"}</button>`).join("")}</div>
   </div>
 
   <!-- DÉPLACEMENT -->
   <div class="dep-blk">
     <div class="dep-tog${S.showDep?" open":""}" id="dep-toggle">
-      <span class="dep-tog-lbl">🚗 Frais de déplacement</span>
+      <span class="dep-tog-lbl">🚗 Déplacement</span>
       <span class="dep-ico">${S.showDep?"−":"+"}</span>
     </div>
     <div id="dep-inner-wrap" style="${S.showDep?"":"display:none"}">
       <div class="dep-inner">
-        <div><label class="lbl">Adresse de départ</label><input class="inp" type="text" id="f-dep-from" value="${f.deplacement?.adresseDepart||ADRESSE}" autocomplete="off"></div>
-        <div><label class="lbl">Adresse d'arrivée</label><input class="inp" type="text" id="f-dep-to" value="${f.deplacement?.adresseArrivee||""}" placeholder="Ex : L'Échasserie, Terranjou" autocomplete="off"></div>
+        <div class="dep-auto" id="dep-auto" style="${S.depAuto?"":"display:none"}">Trajet pré-rempli d'après ta dernière visite chez ce client.</div>
+        <div><label class="lbl">Adresse de départ</label><input class="inp" type="text" id="f-dep-from" value="${esc(d.adresseDepart||ADRESSE)}" autocomplete="off"></div>
+        <div><label class="lbl">Adresse d'arrivée</label><input class="inp" type="text" id="f-dep-to" value="${esc(d.adresseArrivee||"")}" placeholder="Ex : L'Échasserie, Terranjou" autocomplete="off"></div>
         <div class="g2" style="margin-bottom:0">
-          <div><label class="lbl" id="lbl-km">Km totaux${f.deplacement?.allerRetour?" (A/R)":""}</label><input class="inp" type="text" inputmode="decimal" id="f-km" value="${f.deplacement?.km||""}" placeholder="145" autocomplete="off"></div>
-          <div><label class="lbl">Péage A/R (€)</label><input class="inp" type="text" inputmode="decimal" id="f-peage" value="${f.deplacement?.peage||""}" placeholder="10.90" autocomplete="off"></div>
+          <div><label class="lbl">Km aller-retour</label><input class="inp" type="text" inputmode="decimal" id="f-km" value="${esc(d.km??"")}" placeholder="254" autocomplete="off"></div>
+          <div><label class="lbl">Péage A/R (€)</label><input class="inp" type="text" inputmode="decimal" id="f-peage" value="${esc(d.peage??"")}" placeholder="9,20" autocomplete="off"></div>
         </div>
-        <label class="dep-check"><input type="checkbox" id="f-ar" ${f.deplacement?.allerRetour?"checked":""}> Aller-retour (km saisis en total)</label>
-        <div class="dep-prev" id="dep-prev">${depPreview(f.deplacement)}</div>
+        <div class="dep-prev" id="dep-prev"></div>
       </div>
     </div>
   </div>
 
-  <!-- DÉPENSES MANUELLES -->
+  <!-- CONSOMMABLES -->
+  <div class="g2">
+    <div><label class="lbl">🎨 Bombes de peinture</label><input class="inp" type="text" inputmode="decimal" id="f-bombes" value="${num(f.bombes)?esc(String(f.bombes).replace(".",",")):""}" placeholder="Ex : 3,5" autocomplete="off"></div>
+    <div style="display:flex;align-items:flex-end"><div class="dep-prev" id="bombe-prev" style="width:100%"></div></div>
+  </div>
+
+  <!-- AUTRES FRAIS -->
   <div class="fg">
-    <label class="lbl lbl-r">📤 Autres dépenses</label>
-    <div class="ll" id="dep-list">
-      ${f.depenses.map((d,i)=>`<div class="li li-d"><span class="li-lbl">${d.libelle}</span><span class="li-amt" style="color:#c0392b">${fmt(d.montant)}</span><button type="button" class="li-rm" data-rmdep="${i}">×</button></div>`).join("")}
-    </div>
+    <label class="lbl lbl-r">📤 Autres frais engagés (achats, assurance…)</label>
+    <div class="ll" id="frais-list">${fraisListHtml()}</div>
     <div class="la">
       <input class="inp" type="text" id="nd-lbl" placeholder="Libellé" style="flex:1" autocomplete="off">
-      <input class="inp" type="number" inputmode="decimal" id="nd-amt" placeholder="€" style="width:70px" min="0">
-      <button type="button" class="btn-ad" id="btn-adddep">+</button>
+      <input class="inp" type="text" inputmode="decimal" id="nd-amt" placeholder="€" style="width:80px">
+      <button type="button" class="btn-ad" id="btn-addfrais">+</button>
     </div>
   </div>
 
-  <!-- RECETTES -->
-  <div class="fg">
-    <label class="lbl lbl-g">📥 Recettes</label>
-    <div class="ll" id="rec-list">
-      ${f.recettes.map((r,i)=>`<div class="li li-r"><span class="li-lbl">${r.libelle}</span><span class="li-amt" style="color:#27ae60">${fmt(r.montant)}</span><button type="button" class="li-rm" data-rmrec="${i}">×</button></div>`).join("")}
-    </div>
-    <div class="la">
-      <input class="inp" type="text" id="nr-lbl" placeholder="Libellé" style="flex:1" autocomplete="off">
-      <input class="inp" type="number" inputmode="decimal" id="nr-amt" placeholder="€" style="width:70px" min="0">
-      <button type="button" class="btn-ar" id="btn-addrec">+</button>
-    </div>
-  </div>
-
-  <div class="fg"><label class="lbl">Remarque</label><textarea class="inp" id="f-rem" rows="2" placeholder="Notes…">${f.remarque||""}</textarea></div>
+  <div class="fg"><label class="lbl">Remarque</label><textarea class="inp" id="f-rem" rows="2" placeholder="Notes…">${esc(f.remarque)}</textarea></div>
   <button type="button" class="btn-save" id="btn-save">${S.editId?"💾 Enregistrer les modifications":"✚ Ajouter l'entrée"}</button>
 </div>`;}
 
-function renderAnalyse(st){
-  const barMax=Math.max(...S.tags.map(t=>(st.parTag[t.label]||{h:0}).h),1);
-  const nf=S.entries.filter(e=>totRec(e)===0);
-  const hNF=nf.reduce((s,e)=>s+e.heures,0);
+// ── FACTURES ──
+function renderFactures(){
+  const ff=S.factForm;
+  const list=[...S.factures].sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  const tot=list.reduce((s,f)=>s+num(f.honoraires)+num(f.frais),0);
+  const enc=list.reduce((s,f)=>s+num(f.encaisse),0);
   return `
-<div class="card">
-  <div class="card-hdr"><h3>Répartition par activité</h3></div>
-  <div class="card-body">
-    ${S.tags.filter(t=>st.parTag[t.label]?.nb>0).map(t=>{
-      const d=st.parTag[t.label];
-      return `<div class="bar-row">
-        <div class="bar-top"><span style="font-weight:bold;color:${t.color}">${t.label}</span><span style="font-size:11px;color:#888">${d.h}h · ${fmt(d.r)}</span></div>
-        <div class="bar-track"><div class="bar-fill" style="width:${Math.round(d.h/barMax*100)}%;background:${t.color}"></div></div>
-      </div>`;}).join("")}
+${ff?`<div class="form-wrap" style="margin-bottom:10px">
+  <div class="form-hdr"><h3>${S.factEditId?"✏️ Modifier la facture":"✚ Nouvelle facture"}</h3><button class="btn-close" id="btn-fcancel">×</button></div>
+  <div class="g2">
+    <div><label class="lbl">N° de facture</label><input class="inp" type="text" id="ff-num" value="${esc(ff.numero)}" placeholder="2026-004" autocomplete="off"></div>
+    <div><label class="lbl">Date</label><input class="inp" type="date" id="ff-date" value="${esc(ff.date)}"></div>
   </div>
-</div>
-<div class="card">
-  <div class="card-hdr" style="border-color:#8b6914"><h3>Rentabilité par dossier</h3></div>
-  <div style="overflow-x:auto">
-    <table class="tbl"><thead><tr>${["Dossier","h","Rec.","Dép.","Solde","TJM"].map((c,i)=>`<th style="text-align:${i===0?"left":"right"}">${c}</th>`).join("")}</tr></thead>
-    <tbody>${Object.entries(st.parDos).map(([d,s])=>{
-      const sol=s.r-s.d,tjm=s.h>0?s.r/(s.h/8):0;
-      return `<tr><td style="font-weight:bold">${d}</td><td style="text-align:right">${s.h}</td><td style="text-align:right;color:#27ae60">${fmt(s.r)}</td><td style="text-align:right;color:#c0392b">${fmt(s.d)}</td><td style="text-align:right;font-weight:bold;color:${sol>=0?"#27ae60":"#c0392b"}">${fmt(sol)}</td><td style="text-align:right">${s.h>0?fmt(tjm)+"/j":"—"}</td></tr>`;
-    }).join("")}</tbody></table>
+  <div class="fg"><label class="lbl">Client</label><input class="inp" type="text" id="ff-dos" value="${esc(ff.dossier)}" list="dos-list2" autocomplete="off"><datalist id="dos-list2">${dossiers().map(x=>`<option value="${esc(x)}">`).join("")}</datalist></div>
+  <div class="g2">
+    <div><label class="lbl">Honoraires HT</label><input class="inp" type="text" inputmode="decimal" id="ff-hon" value="${ff.honoraires!==""?esc(String(ff.honoraires).replace(".",",")):""}" placeholder="0,00" autocomplete="off"></div>
+    <div><label class="lbl">Frais refacturés HT</label><input class="inp" type="text" inputmode="decimal" id="ff-frais" value="${ff.frais!==""?esc(String(ff.frais).replace(".",",")):""}" placeholder="km, péages…" autocomplete="off"></div>
   </div>
-</div>
+  <div class="fg"><label class="lbl">Montant déjà encaissé</label><input class="inp" type="text" inputmode="decimal" id="ff-enc" value="${ff.encaisse!==""?esc(String(ff.encaisse).replace(".",",")):""}" placeholder="0,00 (acompte compris)" autocomplete="off"></div>
+  ${factEntriesHtml(ff)}
+  <button type="button" class="btn-save" id="btn-fsave">${S.factEditId?"💾 Enregistrer":"✚ Ajouter la facture"}</button>
+</div>`:`<button class="btn-save" id="btn-fnew" style="margin:0 0 10px">✚ Nouvelle facture</button>`}
 <div class="card">
-  <div class="card-hdr" style="border-color:#5c7a8a"><h3>Temps non facturé</h3></div>
+  <div class="card-hdr"><h3>🧾 Mes factures</h3></div>
+  <div class="card-body" style="padding:8px 12px">
+    ${list.length===0?`<div class="empty" style="padding:16px">Aucune facture</div>`:""}
+    ${list.map(f=>{const t=num(f.honoraires)+num(f.frais),reste=t-num(f.encaisse);return `
+    <div class="fact">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:bold;font-size:14px">${esc(f.numero)} <span style="font-weight:normal;color:#999;font-size:12px">· ${fmtD(f.date)}</span></div>
+        <div style="font-size:12px;color:#5a4010">${esc(f.dossier)}</div>
+        <div style="font-size:12px;color:#555">Honoraires ${fmt(f.honoraires)} + frais ${fmt(f.frais)} = <strong>${fmt(t)}</strong></div>
+        <div style="font-size:12px;color:${reste>0.005?"#c0392b":"#27ae60"}">${reste>0.005?`Encaissé ${fmt(f.encaisse)} · reste dû ${fmt(reste)}`:"✓ Payée"}</div>
+      </div>
+      <div class="e-acts" style="padding:0"><button class="be" data-fedit="${f.id}">✏️</button><button class="bd" data-fdel="${f.id}">🗑</button></div>
+    </div>`;}).join("")}
+    ${list.length?`<div style="font-size:12px;color:#555;padding:8px 0 2px;border-top:1px solid #eee;margin-top:4px">Total facturé ${fmt(tot)} · encaissé ${fmt(enc)} · reste dû ${fmt(tot-enc)}</div>`:""}
+  </div>
+</div>`;}
+
+function factCandidates(ff){
+  if(!ff.dossier) return [];
+  return S.entries.filter(e=>e.dossier===ff.dossier&&(e.statut==="facturer"||(e.statut==="facture"&&ff.numeroOrig&&e.factureNum===ff.numeroOrig)))
+    .sort((a,b)=>a.date.localeCompare(b.date));
+}
+function factEntriesHtml(ff){
+  if(!ff.dossier) return `<div class="note" style="margin-bottom:12px">Choisis le client pour cocher les entrées couvertes par cette facture.</div>`;
+  const c=factCandidates(ff);
+  if(!c.length) return `<div class="note" style="margin-bottom:12px">Aucune entrée « À facturer » pour ce client.</div>`;
+  const sel=ff.sel||{};
+  return `<div class="fg"><label class="lbl">Entrées couvertes par cette facture</label>
+    <div class="note" style="margin-bottom:6px">Les entrées cochées passeront au statut « Facturé ».</div>
+    ${c.map(e=>{const chk=sel[e.id]!==undefined?sel[e.id]:(e.statut==="facturer"||e.factureNum===ff.numeroOrig);return `<label class="fchk"><input type="checkbox" data-fsel="${e.id}" ${chk?"checked":""}><span style="flex:1">${fmtD(e.date)} · ${fmtH(e.heures)}${num(e.intervenants)>1?" ×2":""} · ${esc(e.description)}</span><span style="color:#8b6914;white-space:nowrap">${fmt0(valeurFacturable(e))}</span></label>`;}).join("")}
+  </div>`;
+}
+function readFactForm(){
+  const g=id=>document.getElementById(id)?.value??"";
+  const sel={...(S.factForm.sel||{})};
+  document.querySelectorAll("[data-fsel]").forEach(c=>sel[c.dataset.fsel]=c.checked);
+  return {...S.factForm,numero:g("ff-num").trim(),date:g("ff-date")||today(),dossier:g("ff-dos").trim(),
+    honoraires:g("ff-hon")===""?"":parseNum(g("ff-hon")),frais:g("ff-frais")===""?"":parseNum(g("ff-frais")),encaisse:g("ff-enc")===""?"":parseNum(g("ff-enc")),sel};
+}
+
+// ── ANALYSES ──
+function renderAnalyse(a){
+  const clients=Object.entries(a.parClient).sort((x,y)=>y[1].valeur-x[1].valeur);
+  const tagMax=Math.max(...Object.values(a.parTag),1);
+  const th=(c,i)=>`<th style="text-align:${i===0?"left":"right"}">${c}</th>`;
+  const tot=k=>clients.reduce((s,[,c])=>s+c[k],0);
+  return `
+<div class="fscroll">${years().map(y=>`<button class="fbtn${S.year===y?" on":""}" style="${S.year===y?"background:#2d5a27;":""}" data-year="${y}">${y}</button>`).join("")}</div>
+
+<div class="card">
+  <div class="card-hdr"><h3>1 · La valeur de ton temps</h3></div>
   <div class="card-body">
-    <div class="nf-row">
-      <div class="nf-box" style="background:#f0eeee"><div style="font-size:24px;font-weight:bold;color:#5c7a8a">${hNF}h</div><div style="font-size:10px;color:#888;margin-top:2px">non facturées</div></div>
-      <div class="nf-box" style="background:#f5f0e0"><div style="font-size:18px;font-weight:bold;color:#8b6914">${fmt((hNF/8)*550)}</div><div style="font-size:10px;color:#888;margin-top:2px">valeur est. (550€/j)</div></div>
+    <div class="big-row">
+      <div class="big"><div class="big-v">${fmtH(a.heures)}</div><div class="big-l">travaillées</div></div>
+      <div class="big"><div class="big-v" style="color:#8b6914">${fmt0(a.valeur)}</div><div class="big-l">valeur à ${fmt0(R().tauxJour)} / ${R().heuresJour} h</div></div>
     </div>
-    ${nf.map(e=>`<div style="font-size:12px;padding:4px 0;border-bottom:1px solid #eee;color:#555">${fmtD(e.date)} — ${e.description} <span style="color:#aaa">(${e.heures}h)</span></div>`).join("")}
+    ${Object.entries(a.parTag).sort((x,y)=>y[1]-x[1]).map(([t,h])=>`<div class="bar-row">
+      <div class="bar-top"><span style="font-weight:bold;color:${tagCol(t)}">${esc(t)}</span><span style="font-size:11px;color:#888">${fmtH(h)} · ${fmt0(h*tauxH())}</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.round(h/tagMax*100)}%;background:${tagCol(t)}"></div></div>
+    </div>`).join("")}
+    <div class="note">Une entrée avec plusieurs activités est répartie à parts égales entre elles.</div>
   </div>
 </div>
+
+<div class="card">
+  <div class="card-hdr" style="border-color:#8b6914"><h3>2 · Ton taux de facturation</h3></div>
+  <div class="card-body" style="padding-bottom:6px">
+    <div class="big-row">
+      <div class="big"><div class="big-v" style="color:#2d5a27">${Math.round(a.taux*100)} %</div><div class="big-l">de ton temps facturé</div></div>
+      <div class="big"><div class="big-v">${fmt0(a.honoraires)}</div><div class="big-l">honoraires facturés</div></div>
+    </div>
+    <div class="note" style="margin-bottom:8px">Temps offert : <strong>${fmt0(a.offert)}</strong> · non facturable : <strong>${fmt0(a.nonfact)}</strong> · encore à facturer : <strong>${fmt0(a.resteAFacturer)}</strong></div>
+  </div>
+  <div style="overflow-x:auto">
+    <table class="tbl tbl-tight"><thead><tr>${["Client","Heures","Valeur","Facturé","Taux","À fact."].map(th).join("")}</tr></thead>
+    <tbody>${clients.map(([d,c])=>`<tr><td style="font-weight:bold">${esc(d)}</td><td style="text-align:right">${fmtH(c.h)}</td><td style="text-align:right">${fmt0(c.valeur2)}</td><td style="text-align:right;color:#27ae60">${fmt0(c.facture)}</td><td style="text-align:right;font-weight:bold">${c.valeur2>0?Math.round(c.facture/c.valeur2*100)+" %":"—"}</td><td style="text-align:right;color:#c0392b">${c.aFacturer>0.5?fmt0(c.aFacturer):"—"}</td></tr>`).join("")}
+    <tr style="background:#f5f0e6;font-weight:bold"><td>Total</td><td style="text-align:right">${fmtH(a.heures)}</td><td style="text-align:right">${fmt0(a.valeur2)}</td><td style="text-align:right">${fmt0(a.honoraires)}</td><td style="text-align:right">${Math.round(a.taux*100)} %</td><td style="text-align:right">${fmt0(a.resteAFacturer)}</td></tr>
+    </tbody></table>
+  </div>
+  <div class="note" style="padding:8px 16px 12px">Taux = honoraires facturés ÷ valeur du temps (journées en binôme comptées pour les deux intervenants). « À facturer » = valeur des entrées encore au statut « À facturer ».</div>
+</div>
+
+<div class="card">
+  <div class="card-hdr" style="border-color:#2a6080"><h3>3 · Ce que tu gagnes vraiment</h3></div>
+  <div class="card-body">
+    <table class="tbl"><tbody>
+      <tr><td>Chiffre d'affaires facturé (honoraires + frais)</td><td style="text-align:right">${fmt(a.ca)}</td></tr>
+      <tr><td>– Cotisations Urssaf (${String(R().tauxCotis).replace(".",",")} %)</td><td style="text-align:right;color:#c0392b">– ${fmt(a.cotis)}</td></tr>
+      <tr><td>– Km et péages</td><td style="text-align:right;color:#c0392b">– ${fmt(a.route)}</td></tr>
+      <tr><td>– Consommables</td><td style="text-align:right;color:#c0392b">– ${fmt(a.conso)}</td></tr>
+      <tr><td>– Autres frais</td><td style="text-align:right;color:#c0392b">– ${fmt(a.autres)}</td></tr>
+      <tr style="background:#f5f0e6;font-weight:bold"><td>= Revenu net (avant impôt)</td><td style="text-align:right">${fmt(a.net)}</td></tr>
+      <tr style="font-weight:bold"><td>÷ ${fmtH(a.heures)} = par heure travaillée</td><td style="text-align:right;color:${a.netH>=0?"#27ae60":"#c0392b"}">${a.heures>0?fmt(a.netH):"—"}</td></tr>
+    </tbody></table>
+    ${a.resteAFacturer>0.5?`<div class="note" style="margin-top:8px">Si tu factures à ton tarif tout ce qui est encore « À facturer » (${fmt0(a.resteAFacturer)}) : revenu net <strong>${fmt(a.netSiFacture)}</strong>, soit <strong>${fmt(a.netSiFactureH)} / h</strong>.</div>`:""}
+    <div class="note" style="margin-top:8px">Trésorerie : encaissé <strong>${fmt(a.encaisse)}</strong> → cotisations correspondantes à prévoir : <strong>${fmt(a.cotisEncaisse)}</strong>.</div>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-hdr" style="border-color:#2d5a27"><h3>⬇ Exporter mes données</h3></div>
   <div class="card-body">
-    <div style="font-size:12px;color:#666;margin-bottom:10px">${S.entries.length} entrées. L'export télécharge une copie ; tes données restent inchangées dans ton Drive.</div>
+    <div class="note" style="margin-bottom:10px">${S.entries.length} entrées, ${S.factures.length} factures. L'export télécharge une copie ; tes données restent inchangées dans ton Drive.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button type="button" id="btn-exp-csv" style="flex:1;padding:10px;border-radius:8px;border:none;background:#2d5a27;color:#fff;font-weight:bold;cursor:pointer">CSV (tableur)</button>
-      <button type="button" id="btn-exp-json" style="flex:1;padding:10px;border-radius:8px;border:1px solid #2d5a27;background:#fff;color:#2d5a27;font-weight:bold;cursor:pointer">JSON (sauvegarde)</button>
+      <button type="button" class="btn-exp" id="btn-exp-csv">Journal (CSV)</button>
+      <button type="button" class="btn-exp" id="btn-exp-km">Relevé km (CSV)</button>
+      <button type="button" class="btn-exp btn-exp2" id="btn-exp-json">Sauvegarde (JSON)</button>
     </div>
   </div>
 </div>`;}
 
-function renderTags(st){
+// ── RÉGLAGES ──
+function renderReglages(){
+  const r=R(), counts={};
+  S.entries.forEach(e=>(e.tags||[]).forEach(t=>counts[t]=(counts[t]||0)+1));
+  const field=(id,l,v,unit)=>`<div><label class="lbl">${l}</label><div style="display:flex;align-items:center;gap:6px"><input class="inp" type="text" inputmode="decimal" id="${id}" value="${esc(String(v).replace(".",","))}" autocomplete="off"><span style="font-size:13px;color:#888;white-space:nowrap">${unit}</span></div></div>`;
   return `
 <div class="card">
-  <div class="card-hdr" style="border-color:#7a5c8a"><h3>🏷 Mes tags</h3></div>
+  <div class="card-hdr"><h3>💶 Tarifs et taux</h3></div>
+  <div class="card-body">
+    <div class="g2">${field("rg-tj","Tarif journée",r.tauxJour,"€")}${field("rg-hj","Heures par journée",r.heuresJour,"h")}</div>
+    <div class="g2">${field("rg-km","Indemnité km",r.tauxKm,"€/km")}${field("rg-cot","Cotisations Urssaf",r.tauxCotis,"%")}</div>
+    <div class="g2">${field("rg-bombe","Prix d'une bombe",r.prixBombe,"€")}<div></div></div>
+    <button class="btn-save" id="btn-rgsave">Enregistrer les réglages</button>
+    <div class="note" style="margin-top:8px">Valeur d'une heure : ${fmt(tauxH())}. Cotisations : 25,6 % (BNC) + 0,2 % (formation professionnelle).</div>
+  </div>
+</div>
+<div class="card">
+  <div class="card-hdr" style="border-color:#7a5c8a"><h3>🏷 Mes activités (tags)</h3></div>
   <div class="card-body" style="padding-top:10px">
     ${S.tags.map((t,idx)=>`
     <div class="te-item">
       ${S.editTagI===idx?`
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-          <input class="te-inp" id="te-inp" value="${S.editTagV}">
+          <input class="te-inp" id="te-inp" value="${esc(S.editTagV)}">
           <button class="btn-ok" data-savete="${idx}">OK</button>
           <button class="btn-can" id="btn-cante">×</button>
         </div>`:`
         <div class="te-row">
           <div class="te-dot" style="background:${t.color}"></div>
-          <span class="te-name">${t.label}</span>
-          <span class="te-cnt">${st.parTag[t.label]?.nb||0} entrée${(st.parTag[t.label]?.nb||0)!==1?"s":""}</span>
+          <span class="te-name">${esc(t.label)}</span>
+          <span class="te-cnt">${counts[t.label]||0} entrée${(counts[t.label]||0)!==1?"s":""}</span>
           <button class="btn-te" data-editte="${idx}">✏️</button>
           <button class="btn-td" data-delte="${idx}">🗑</button>
         </div>`}
       <div class="palette">${PALETTE.map(c=>`<div class="pal-dot${t.color===c?" on":""}" style="background:${c}" data-setcol="${idx}" data-col="${c}"></div>`).join("")}</div>
     </div>`).join("")}
+    <div style="display:flex;flex-direction:column;gap:11px;margin-top:6px">
+      <div><label class="lbl">Nouvelle activité</label><input class="inp" id="nt-lbl" placeholder="Ex : Expertise, Vente de bois…" value="${esc(S.newTagLbl)}"></div>
+      <div class="palette" style="gap:10px">${PALETTE.map(c=>`<div class="pal-dot${S.newTagCol===c?" on":""}" style="background:${c};width:28px;height:28px" data-newcol="${c}"></div>`).join("")}</div>
+      <button class="btn-addtag" id="btn-addtag">Ajouter cette activité</button>
+    </div>
   </div>
 </div>
 <div class="card">
-  <div class="card-hdr" style="border-color:#7a5c8a"><h3>+ Nouveau tag</h3></div>
-  <div class="card-body" style="display:flex;flex-direction:column;gap:11px">
-    <div><label class="lbl">Nom</label><input class="inp" id="nt-lbl" placeholder="Ex : Expertise, Vente de bois…" value="${S.newTagLbl}"></div>
-    <div><label class="lbl">Couleur</label><div class="palette" style="gap:10px">${PALETTE.map(c=>`<div class="pal-dot${S.newTagCol===c?" on":""}" style="background:${c};width:28px;height:28px" data-newcol="${c}"></div>`).join("")}</div></div>
-    <div style="display:flex;gap:10px;align-items:center">
-      <div style="width:32px;height:32px;border-radius:50%;background:${S.newTagCol};border:2px solid rgba(0,0,0,.1)"></div>
-      <span style="font-size:14px;font-weight:bold;color:${S.newTagCol}">${S.newTagLbl||"Aperçu"}</span>
-    </div>
-    <button class="btn-addtag" id="btn-addtag">Ajouter ce tag</button>
+  <div class="card-hdr" style="border-color:#b05030"><h3>⬆ Importer une sauvegarde</h3></div>
+  <div class="card-body">
+    <div class="note" style="margin-bottom:10px">Remplace <strong>toutes</strong> les données de l'outil par celles d'un fichier JSON (export « Sauvegarde »). Fais d'abord un export de sécurité.</div>
+    <input type="file" id="imp-file" accept=".json,application/json" style="font-size:13px">
   </div>
 </div>`;}
 
 // ═══════════════════════════════════════════
-// STATS
-// ═══════════════════════════════════════════
-function calcStats(){
-  const th=S.entries.reduce((s,e)=>s+e.heures,0);
-  const td=S.entries.reduce((s,e)=>s+totDep(e),0);
-  const tr=S.entries.reduce((s,e)=>s+totRec(e),0);
-  const parTag={};
-  S.tags.forEach(t=>{const es=S.entries.filter(e=>e.tag===t.label);parTag[t.label]={h:es.reduce((s,e)=>s+e.heures,0),d:es.reduce((s,e)=>s+totDep(e),0),r:es.reduce((s,e)=>s+totRec(e),0),nb:es.length};});
-  const parDos={};
-  [...new Set(S.entries.map(e=>e.dossier||"—"))].forEach(d=>{const es=S.entries.filter(e=>(e.dossier||"—")===d);parDos[d]={h:es.reduce((s,e)=>s+e.heures,0),r:es.reduce((s,e)=>s+totRec(e),0),d:es.reduce((s,e)=>s+totDep(e),0)};});
-  return {th,td,tr,solde:tr-td,tjm:th>0?tr/(th/8):0,parTag,parDos};
-}
-
-// ═══════════════════════════════════════════
-// MISE À JOUR DÉPLACEMENT SANS RE-RENDER
-// (résout le bug clavier)
-// ═══════════════════════════════════════════
-function parseNum(str){ return parseFloat((str||"").replace(",","."))||0; }
-function updateDepPreview(){
-  const km=parseNum(document.getElementById("f-km")?.value);
-  const pe=parseNum(document.getElementById("f-peage")?.value);
-  const ar=document.getElementById("f-ar")?.checked;
-  const prev=document.getElementById("dep-prev");
-  const lblKm=document.getElementById("lbl-km");
-  if(lblKm) lblKm.textContent="Km totaux"+(ar?" (A/R)":"");
-  if(prev){
-    const kmM=km*TAUX_KM, total=kmM+pe;
-    prev.innerHTML=(km>0||pe>0)?`${km}\u00a0km × ${TAUX_KM}\u00a0€ = <strong>${fmt(kmM)}</strong>${pe>0?` · Péage\u00a0<strong>${fmt(pe)}</strong>`:""} &nbsp;→&nbsp; <strong>Total\u00a0: ${fmt(total)}</strong>`:"";
-  }
-}
-
-// ═══════════════════════════════════════════
-// LIRE FORMULAIRE
+// LIRE LES FORMULAIRES
 // ═══════════════════════════════════════════
 function readForm(){
   const g=id=>document.getElementById(id);
@@ -609,23 +725,95 @@ function readForm(){
     adresseArrivee: g("f-dep-to")?.value||"",
     km: parseNum(g("f-km")?.value),
     peage: parseNum(g("f-peage")?.value),
-    allerRetour: g("f-ar")?.checked||false,
+    allerRetour: true,
   }:null;
   return {
-    date:   g("f-date")?.value||new Date().toISOString().slice(0,10),
-    heures: parseFloat(g("f-heures")?.value)||8,
+    date: g("f-date")?.value||today(),
+    heures: parseNum(g("f-heures")?.value),
     description: g("f-desc")?.value||"",
-    tag:    S.form.tag,
-    dossier: g("f-dos")?.value||"",
+    tags: [...(S.form.tags||[])],
+    dossier: (g("f-dos")?.value||"").trim(),
+    intervenants: S.form.intervenants||1,
+    statut: S.form.statut||"facturer",
     deplacement: dep,
-    depenses: S.form.depenses,
-    recettes: S.form.recettes,
+    bombes: parseNum(g("f-bombes")?.value),
+    frais: S.form.frais||[],
     remarque: g("f-rem")?.value||"",
+    ...(S.form.statut==="facture"&&S.form.factureNum?{factureNum:S.form.factureNum}:{}),
+    ...(S.form.ancien?{ancien:S.form.ancien}:{}),
   };
+}
+function updateDepPreview(){
+  const km=parseNum(document.getElementById("f-km")?.value);
+  const pe=parseNum(document.getElementById("f-peage")?.value);
+  const prev=document.getElementById("dep-prev");
+  if(prev){const kmM=km*R().tauxKm;prev.innerHTML=(km>0||pe>0)?`${String(km).replace(".",",")} km × ${String(R().tauxKm).replace(".",",")} € = <strong>${fmt(kmM)}</strong>${pe>0?` · Péage <strong>${fmt(pe)}</strong>`:""} → <strong>${fmt(kmM+pe)}</strong>`:"";prev.style.display=(km>0||pe>0)?"":"none";}
+}
+function updateBombePreview(){
+  const b=parseNum(document.getElementById("f-bombes")?.value);
+  const prev=document.getElementById("bombe-prev");
+  if(prev){prev.innerHTML=b>0?(R().prixBombe>0?`${String(b).replace(".",",")} × ${fmt(R().prixBombe)} = <strong>${fmt(b*R().prixBombe)}</strong>`:`Prix d'une bombe à régler dans Réglages`):"";prev.style.display=b>0?"":"none";}
+}
+function lastTripFor(client){
+  if(!client) return null;
+  const es=S.entries.filter(e=>e.dossier===client&&e.deplacement&&num(e.deplacement.km)>0).sort((a,b)=>b.date.localeCompare(a.date));
+  return es[0]?.deplacement||null;
+}
+function setDepFields(d){
+  document.getElementById("f-dep-from").value=d.adresseDepart||ADRESSE;
+  document.getElementById("f-dep-to").value=d.adresseArrivee||"";
+  document.getElementById("f-km").value=d.km?String(d.km).replace(".",","):"";
+  document.getElementById("f-peage").value=d.peage?String(d.peage).replace(".",","):"";
+  updateDepPreview();
+}
+function openDep(open){
+  S.showDep=open;
+  const tog=document.getElementById("dep-toggle"),inner=document.getElementById("dep-inner-wrap");
+  tog.classList.toggle("open",open); tog.querySelector(".dep-ico").textContent=open?"−":"+"; inner.style.display=open?"":"none";
+}
+function refreshFraisList(){
+  const el=document.getElementById("frais-list"); if(!el)return;
+  el.innerHTML=fraisListHtml();
+  document.querySelectorAll("[data-rmfrais]").forEach(b=>b.onclick=()=>{S.form.frais=S.form.frais.filter((_,i)=>i!=b.dataset.rmfrais);refreshFraisList();});
 }
 
 // ═══════════════════════════════════════════
-// BIND EVENTS LOGIN
+// EXPORTS (lecture seule)
+// ═══════════════════════════════════════════
+function downloadFile(name, content, mime){
+  const blob=new Blob([content],{type:mime});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download=name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},1000);
+}
+const csvQ = v => '"'+String(v??"").replace(/"/g,'""')+'"';
+const csvN = n => (Math.round((Number(n)||0)*100)/100).toString().replace(".",",");
+const csvJoin = rows => "﻿"+rows.map(r=>r.map(csvQ).join(";")).join("\r\n");
+function exportJSON(){
+  downloadFile(`qualisilva-sauvegarde-${today()}.json`, JSON.stringify({exporte_le:new Date().toISOString(),...dataToSave()},null,2), "application/json");
+  toast("⬇ Sauvegarde téléchargée");
+}
+function exportCSV(){
+  const head=["Date","Client","Activités","Description","Heures","Intervenants","Statut","N° facture","Valeur","Km A/R","Frais km","Péage","Bombes","Consommables","Autres frais","Détail autres frais","Total frais","Remarque"];
+  const rows=[...S.entries].sort((a,b)=>a.date.localeCompare(b.date)).map(e=>[
+    e.date,e.dossier,(e.tags||[]).join(", "),e.description,csvN(e.heures),e.intervenants||1,statut(e.statut).l,e.factureNum||"",
+    csvN(valeurEntree(e)),
+    e.deplacement?csvN(e.deplacement.km):"",csvN(fraisKm(e)),csvN(peage(e)),csvN(e.bombes),csvN(fraisConso(e)),csvN(fraisAutres(e)),
+    (e.frais||[]).map(f=>`${f.libelle} : ${csvN(f.montant)}`).join(" | "),csvN(fraisTot(e)),e.remarque]);
+  downloadFile(`qualisilva-journal-${today()}.csv`, csvJoin([head,...rows]), "text/csv;charset=utf-8");
+  toast("⬇ Journal CSV téléchargé");
+}
+function exportKm(){
+  const head=["Date","Départ","Arrivée","Client","Distance A/R (km)","Indemnité","Péage","Total frais","Description"];
+  const rows=S.entries.filter(e=>e.deplacement&&(num(e.deplacement.km)>0||num(e.deplacement.peage)>0)).sort((a,b)=>a.date.localeCompare(b.date))
+    .map(e=>[e.date,e.deplacement.adresseDepart,e.deplacement.adresseArrivee,e.dossier,csvN(e.deplacement.km),csvN(fraisKm(e)),csvN(peage(e)),csvN(fraisKm(e)+peage(e)),e.description]);
+  downloadFile(`qualisilva-releve-km-${today()}.csv`, csvJoin([head,...rows]), "text/csv;charset=utf-8");
+  toast("⬇ Relevé km téléchargé");
+}
+
+// ═══════════════════════════════════════════
+// ÉVÉNEMENTS
 // ═══════════════════════════════════════════
 function bindLogin(){
   document.getElementById("btn-signin").onclick=async()=>{
@@ -634,189 +822,180 @@ function bindLogin(){
       const token=await signIn();
       S.token=token;
       const data=await driveLoad(token);
-      S.entries=data.entries||SEED;
-      S.tags=data.tags||S.tags;
+      applyData(data);
       S.screen="app";
       render();
-    }catch(e){alert("Connexion annulée");document.getElementById("btn-signin").innerHTML='<svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/></svg> Se connecter avec Google';}
+    }catch(e){alert("Connexion annulée");render();}
   };
 }
 
-// ═══════════════════════════════════════════
-// BIND EVENTS APP
-// ═══════════════════════════════════════════
+function newForm(){
+  return {date:today(),description:"",tags:[],dossier:"",heures:8,intervenants:1,statut:"facturer",deplacement:null,bombes:0,frais:[],remarque:""};
+}
+
 function bindApp(){
   const on=(id,ev,fn)=>{const el=document.getElementById(id);if(el)el[ev]=fn;};
   const all=(sel,fn)=>document.querySelectorAll(sel).forEach(fn);
 
-  // Nav
+  // Navigation
   on("nav-journal","onclick",()=>{S.view="journal";render();});
+  on("nav-factures","onclick",()=>{S.view="factures";render();});
   on("nav-analyse","onclick",()=>{S.view="analyse";render();});
-  on("nav-tags",   "onclick",()=>{S.view="tags";render();});
-  on("btn-exp-csv","onclick",exportCSV);
-  on("btn-exp-json","onclick",exportJSON);
-  on("btn-new",    "onclick",()=>{
-    S.form={date:new Date().toISOString().slice(0,10),description:"",tag:S.tags[0]?.label||"",dossier:"",heures:8,deplacement:null,depenses:[],recettes:[],remarque:""};
-    S.showDep=false; S.editId=null; S.view="saisie"; render();
-  });
+  on("nav-reglages","onclick",()=>{S.view="reglages";render();});
+  on("btn-new","onclick",()=>{S.form=newForm();S.showDep=false;S.depAuto=false;S.editId=null;S.view="saisie";render();});
 
-  // Filtres journal
+  // Filtres
   all("[data-ftag]",b=>b.onclick=()=>{S.filterTag=b.dataset.ftag;render();});
   all("[data-fdos]",b=>b.onclick=()=>{S.filterDos=b.dataset.fdos;render();});
+  all("[data-fstat]",b=>b.onclick=()=>{S.filterStatut=b.dataset.fstat;render();});
+  all("[data-year]",b=>b.onclick=()=>{S.year=b.dataset.year;render();});
 
-  // Actions entrées
+  // Entrées
   all("[data-edit]",b=>b.onclick=()=>{
-    const e=S.entries.find(e=>e.id==b.dataset.edit);if(!e)return;
-    S.form=JSON.parse(JSON.stringify(e)); S.showDep=!!e.deplacement; S.editId=e.id; S.view="saisie"; render();
+    const e=S.entries.find(e=>String(e.id)===b.dataset.edit);if(!e)return;
+    S.form=JSON.parse(JSON.stringify(e)); S.showDep=!!e.deplacement; S.depAuto=false; S.editId=e.id; S.view="saisie"; render();
   });
   all("[data-copy]",b=>b.onclick=()=>{
-    const e=S.entries.find(e=>e.id==b.dataset.copy);if(!e)return;
-    const copy=JSON.parse(JSON.stringify(e));
-    copy.id=Date.now(); copy.date=new Date().toISOString().slice(0,10);
-    S.entries.push(copy); scheduleSave(); render(); toast("📋 Entrée dupliquée");
+    const e=S.entries.find(e=>String(e.id)===b.dataset.copy);if(!e)return;
+    const copy=JSON.parse(JSON.stringify(e)); delete copy.ancien; delete copy.factureNum;
+    if(copy.statut==="facture") copy.statut="facturer";
+    copy.id=Date.now(); copy.date=today();
+    S.entries.push(copy); scheduleSave(); render(); toast("📋 Entrée dupliquée à la date du jour");
   });
   all("[data-del]",b=>b.onclick=()=>{
     if(!confirm("Supprimer cette entrée ?"))return;
-    S.entries=S.entries.filter(e=>e.id!=b.dataset.del); scheduleSave(); render(); toast("🗑 Supprimée");
+    S.entries=S.entries.filter(e=>String(e.id)!==b.dataset.del); scheduleSave(); render(); toast("🗑 Supprimée");
   });
 
-  // ── FORMULAIRE SAISIE ──
+  // Formulaire de saisie
   if(S.view==="saisie"){
     on("btn-cancel","onclick",()=>{S.view="journal";render();});
-
-    // Tag picker — SANS re-render, juste mise à jour visuelle
     all("[data-tag]",b=>b.onclick=()=>{
-      S.form.tag=b.dataset.tag;
-      document.querySelectorAll(".tp").forEach(tp=>{
-        const t=S.tags.find(t=>t.label===tp.dataset.tag);
-        const sel=tp.dataset.tag===S.form.tag;
-        tp.className="tp"+(sel?" on":"");
-        tp.style.background=sel?(t?.color||"#888"):"";
-        tp.style.borderColor=sel?(t?.color||"#888"):"transparent";
-      });
+      const l=b.dataset.tag, t=S.tags.find(x=>x.label===l);
+      S.form.tags=S.form.tags||[];
+      if(S.form.tags.includes(l)) S.form.tags=S.form.tags.filter(x=>x!==l); else S.form.tags.push(l);
+      const sel=S.form.tags.includes(l);
+      b.className="tp"+(sel?" on":""); b.style.background=sel?(t?.color||"#888"):""; b.style.borderColor=sel?(t?.color||"#888"):"transparent";
     });
-
-    // Déplacement toggle — SANS re-render
+    all("[data-int]",b=>b.onclick=()=>{S.form.intervenants=Number(b.dataset.int);document.querySelectorAll("[data-int]").forEach(x=>x.className="seg-b"+(x===b?" on":""));});
+    all("[data-st]",b=>b.onclick=()=>{
+      S.form.statut=b.dataset.st;
+      document.querySelectorAll("[data-st]").forEach(x=>{const s=statut(x.dataset.st),sel=x===b;x.className="seg-b"+(sel?" on":"");x.style.background=sel?s.c:"";x.style.borderColor=sel?s.c:"";});
+    });
     on("dep-toggle","onclick",()=>{
-      S.showDep=!S.showDep;
-      const tog=document.getElementById("dep-toggle");
-      const inner=document.getElementById("dep-inner-wrap");
-      if(S.showDep){
-        if(!S.form.deplacement) S.form.deplacement={adresseDepart:ADRESSE,adresseArrivee:"",km:"",peage:"",allerRetour:true};
-        tog.classList.add("open");
-        tog.querySelector(".dep-ico").textContent="−";
-        inner.style.display="";
-        // Remplir les champs
-        document.getElementById("f-dep-from").value=S.form.deplacement.adresseDepart||ADRESSE;
-        document.getElementById("f-dep-to").value=S.form.deplacement.adresseArrivee||"";
-        document.getElementById("f-km").value=S.form.deplacement.km||"";
-        document.getElementById("f-peage").value=S.form.deplacement.peage||"";
-        document.getElementById("f-ar").checked=S.form.deplacement.allerRetour!==false;
-        bindDepFields();
-      }else{
-        S.form.deplacement=null;
-        tog.classList.remove("open");
-        tog.querySelector(".dep-ico").textContent="+";
-        inner.style.display="none";
+      const open=!S.showDep; openDep(open);
+      if(open&&!document.getElementById("f-km").value){
+        const t=lastTripFor((document.getElementById("f-dos").value||"").trim());
+        if(t){setDepFields(t);S.depAuto=true;document.getElementById("dep-auto").style.display="";}
       }
     });
-
-    // Champs déplacement (si déjà ouvert au chargement)
-    if(S.showDep) bindDepFields();
-
-    // Supprimer dépense
-    all("[data-rmdep]",b=>b.onclick=()=>{
-      S.form.depenses=S.form.depenses.filter((_,i)=>i!=b.dataset.rmdep);
-      refreshDepList();
+    // Nouveau client ou client existant : pré-remplir le trajet si le bloc est vide
+    on("f-dos","onchange",()=>{
+      const c=(document.getElementById("f-dos").value||"").trim();
+      const t=lastTripFor(c);
+      const kmEmpty=!parseNum(document.getElementById("f-km").value);
+      if(t&&kmEmpty&&!S.editId){openDep(true);setDepFields(t);S.depAuto=true;document.getElementById("dep-auto").style.display="";}
     });
-
-    // Ajouter dépense
-    on("btn-adddep","onclick",()=>{
-      const lbl=(document.getElementById("nd-lbl")?.value||"").trim();
-      const amt=parseFloat(document.getElementById("nd-amt")?.value);
-      if(!lbl||isNaN(amt)||amt<=0)return;
-      S.form.depenses.push({libelle:lbl,montant:amt});
-      document.getElementById("nd-lbl").value="";
-      document.getElementById("nd-amt").value="";
-      refreshDepList();
+    ["f-km","f-peage"].forEach(id=>on(id,"oninput",updateDepPreview));
+    on("f-bombes","oninput",updateBombePreview);
+    updateDepPreview(); updateBombePreview();
+    all("[data-rmfrais]",b=>b.onclick=()=>{S.form.frais=S.form.frais.filter((_,i)=>i!=b.dataset.rmfrais);refreshFraisList();});
+    on("btn-addfrais","onclick",()=>{
+      const lbl=(document.getElementById("nd-lbl").value||"").trim();
+      const amt=parseNum(document.getElementById("nd-amt").value);
+      if(!lbl||!(amt>0))return;
+      S.form.frais=[...(S.form.frais||[]),{libelle:lbl,montant:amt}];
+      document.getElementById("nd-lbl").value=""; document.getElementById("nd-amt").value="";
+      refreshFraisList();
     });
-
-    // Supprimer recette
-    all("[data-rmrec]",b=>b.onclick=()=>{
-      S.form.recettes=S.form.recettes.filter((_,i)=>i!=b.dataset.rmrec);
-      refreshRecList();
-    });
-
-    // Ajouter recette
-    on("btn-addrec","onclick",()=>{
-      const lbl=(document.getElementById("nr-lbl")?.value||"").trim();
-      const amt=parseFloat(document.getElementById("nr-amt")?.value);
-      if(!lbl||isNaN(amt)||amt<=0)return;
-      S.form.recettes.push({libelle:lbl,montant:amt});
-      document.getElementById("nr-lbl").value="";
-      document.getElementById("nr-amt").value="";
-      refreshRecList();
-    });
-
-    // Save
     on("btn-save","onclick",()=>{
       const f=readForm();
       if(!f.description.trim()){alert("Merci d'ajouter une description.");return;}
-      if(!f.tag){alert("Merci de sélectionner un type d'activité.");return;}
-      if(S.editId) S.entries=S.entries.map(e=>e.id===S.editId?{...f,id:S.editId}:e);
+      if(!f.tags.length){alert("Merci de choisir au moins une activité.");return;}
+      const wasEdit=!!S.editId;
+      if(wasEdit) S.entries=S.entries.map(e=>e.id===S.editId?{...f,id:S.editId}:e);
       else S.entries.push({...f,id:Date.now()});
       scheduleSave(); S.view="journal"; S.editId=null;
-      render(); toast(S.editId?"✓ Modifié":"✓ Entrée ajoutée");
+      render(); toast(wasEdit?"✓ Modifié":"✓ Entrée ajoutée");
     });
   }
 
-  // ── TAGS EDITOR ──
+  // Factures
+  on("btn-fnew","onclick",()=>{S.factForm={numero:"",date:today(),dossier:"",honoraires:"",frais:"",encaisse:"",sel:{}};S.factEditId=null;render();});
+  on("ff-dos","onchange",()=>{S.factForm=readFactForm();S.factForm.sel={};render();});
+  on("btn-fcancel","onclick",()=>{S.factForm=null;S.factEditId=null;render();});
+  all("[data-fedit]",b=>b.onclick=()=>{const f=S.factures.find(x=>String(x.id)===b.dataset.fedit);if(!f)return;S.factForm={...f,numeroOrig:f.numero,sel:{}};S.factEditId=f.id;render();window.scrollTo(0,0);});
+  all("[data-fdel]",b=>b.onclick=()=>{
+    const f=S.factures.find(x=>String(x.id)===b.dataset.fdel);if(!f)return;
+    if(!confirm("Supprimer cette facture ? Ses entrées repasseront « À facturer »."))return;
+    S.entries=S.entries.map(e=>{if(e.statut==="facture"&&e.factureNum===f.numero&&e.dossier===f.dossier){const {factureNum,...r}=e;return {...r,statut:"facturer"};}return e;});
+    S.factures=S.factures.filter(x=>x.id!==f.id);scheduleSave();render();toast("🗑 Facture supprimée");});
+  on("btn-fsave","onclick",()=>{
+    const ff=readFactForm();
+    if(!ff.numero||!ff.dossier){alert("Merci d'indiquer le numéro et le client.");return;}
+    const f={numero:ff.numero,date:ff.date,dossier:ff.dossier,honoraires:num(ff.honoraires),frais:num(ff.frais),encaisse:num(ff.encaisse)};
+    const cand=new Set(factCandidates(ff).map(e=>e.id));
+    S.entries=S.entries.map(e=>{
+      if(!cand.has(e.id)) return e;
+      const chk=ff.sel[e.id]!==undefined?ff.sel[e.id]:(e.statut==="facturer"||e.factureNum===ff.numeroOrig);
+      if(chk) return {...e,statut:"facture",factureNum:f.numero};
+      if(e.statut==="facture"){const {factureNum,...r}=e;return {...r,statut:"facturer"};}
+      return e;
+    });
+    if(S.factEditId) S.factures=S.factures.map(x=>x.id===S.factEditId?{...f,id:S.factEditId}:x);
+    else S.factures.push({...f,id:Date.now()});
+    S.factForm=null;S.factEditId=null;scheduleSave();render();toast("✓ Facture enregistrée");
+  });
+
+  // Exports
+  on("btn-exp-csv","onclick",exportCSV);
+  on("btn-exp-km","onclick",exportKm);
+  on("btn-exp-json","onclick",exportJSON);
+
+  // Réglages
+  on("btn-rgsave","onclick",()=>{
+    const g=id=>parseNum(document.getElementById(id).value);
+    const r={tauxJour:g("rg-tj"),heuresJour:g("rg-hj"),tauxKm:g("rg-km"),tauxCotis:g("rg-cot"),prixBombe:g("rg-bombe")};
+    if(!(r.tauxJour>0)||!(r.heuresJour>0)){alert("Tarif journée et heures par journée doivent être supérieurs à 0.");return;}
+    S.reglages=r;scheduleSave();render();toast("✓ Réglages enregistrés");
+  });
+  on("imp-file","onchange",ev=>{
+    const file=ev.target.files[0]; if(!file)return;
+    const rd=new FileReader();
+    rd.onload=()=>{
+      try{
+        const data=JSON.parse(rd.result);
+        if(!Array.isArray(data.entries)) throw new Error("format");
+        if(!confirm(`Remplacer toutes les données par ce fichier ?\n${data.entries.length} entrées, ${(data.factures||[]).length} factures.`)){ev.target.value="";return;}
+        applyData(data); scheduleSave(); S.view="journal"; render(); toast("✓ Sauvegarde importée");
+      }catch(e){alert("Fichier illisible : ce n'est pas une sauvegarde Qualisilva.");ev.target.value="";}
+    };
+    rd.readAsText(file);
+  });
   all("[data-editte]",b=>b.onclick=()=>{S.editTagI=parseInt(b.dataset.editte);S.editTagV=S.tags[S.editTagI].label;render();setTimeout(()=>document.getElementById("te-inp")?.focus(),50);});
   all("[data-savete]",b=>b.onclick=()=>{
     const idx=parseInt(b.dataset.savete);
     const nl=(document.getElementById("te-inp")?.value||"").trim();if(!nl)return;
     const ol=S.tags[idx].label;
     S.tags[idx].label=nl;
-    S.entries=S.entries.map(e=>e.tag===ol?{...e,tag:nl}:e);
-    S.editTagI=null;scheduleSave();render();toast("Tag renommé");
+    S.entries=S.entries.map(e=>({...e,tags:(e.tags||[]).map(t=>t===ol?nl:t)}));
+    if(S.filterTag===ol)S.filterTag=nl;
+    S.editTagI=null;scheduleSave();render();toast("Activité renommée");
   });
   on("btn-cante","onclick",()=>{S.editTagI=null;render();});
   all("[data-delte]",b=>b.onclick=()=>{
     const idx=parseInt(b.dataset.delte),lbl=S.tags[idx].label;
-    if(S.entries.some(e=>e.tag===lbl)&&!confirm(`Le tag "${lbl}" est utilisé. Supprimer quand même ?`))return;
-    S.tags=S.tags.filter((_,i)=>i!==idx);scheduleSave();render();toast("Tag supprimé");
+    if(S.entries.some(e=>(e.tags||[]).includes(lbl))&&!confirm(`L'activité "${lbl}" est utilisée. La supprimer de la liste quand même ?`))return;
+    S.tags=S.tags.filter((_,i)=>i!==idx);scheduleSave();render();toast("Activité supprimée");
   });
   all("[data-setcol]",d=>d.onclick=()=>{S.tags[parseInt(d.dataset.setcol)].color=d.dataset.col;scheduleSave();render();});
-  all("[data-newcol]",d=>d.onclick=()=>{S.newTagCol=d.dataset.newcol;render();});
+  all("[data-newcol]",d=>d.onclick=()=>{S.newTagLbl=document.getElementById("nt-lbl")?.value||"";S.newTagCol=d.dataset.newcol;render();});
   on("btn-addtag","onclick",()=>{
     const l=(document.getElementById("nt-lbl")?.value||"").trim();
     if(!l||S.tags.find(t=>t.label===l)){alert("Nom vide ou déjà existant.");return;}
     S.tags.push({label:l,color:S.newTagCol});
-    S.newTagLbl="";scheduleSave();render();toast("Tag ajouté");
+    S.newTagLbl="";scheduleSave();render();toast("Activité ajoutée");
   });
-}
-
-// Bind les champs déplacement (live update sans re-render)
-function bindDepFields(){
-  ["f-km","f-peage","f-ar"].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el) el.oninput=el.onchange=updateDepPreview;
-  });
-}
-
-// Rafraîchir juste la liste des dépenses (sans toucher au reste)
-function refreshDepList(){
-  const el=document.getElementById("dep-list");
-  if(!el)return;
-  el.innerHTML=S.form.depenses.map((d,i)=>`<div class="li li-d"><span class="li-lbl">${d.libelle}</span><span class="li-amt" style="color:#c0392b">${fmt(d.montant)}</span><button type="button" class="li-rm" data-rmdep="${i}">×</button></div>`).join("");
-  document.querySelectorAll("[data-rmdep]").forEach(b=>b.onclick=()=>{S.form.depenses=S.form.depenses.filter((_,i)=>i!=b.dataset.rmdep);refreshDepList();});
-}
-
-function refreshRecList(){
-  const el=document.getElementById("rec-list");
-  if(!el)return;
-  el.innerHTML=S.form.recettes.map((r,i)=>`<div class="li li-r"><span class="li-lbl">${r.libelle}</span><span class="li-amt" style="color:#27ae60">${fmt(r.montant)}</span><button type="button" class="li-rm" data-rmrec="${i}">×</button></div>`).join("");
-  document.querySelectorAll("[data-rmrec]").forEach(b=>b.onclick=()=>{S.form.recettes=S.form.recettes.filter((_,i)=>i!=b.dataset.rmrec);refreshRecList();});
 }
 
 // ═══════════════════════════════════════════
