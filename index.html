@@ -132,6 +132,11 @@ textarea.inp{resize:none}
 .fchk{display:flex;gap:8px;align-items:flex-start;font-size:12px;padding:6px 0;border-bottom:1px solid #f0ece4;cursor:pointer}
 .fchk input{width:18px;height:18px;flex-shrink:0;margin-top:1px}
 .tbl-tight{font-size:11px}.tbl-tight th{padding:6px 4px;font-size:9px}.tbl-tight td{padding:6px 4px}.tbl-tight td:first-child{padding-left:10px}
+.e-lieu{font-size:16px;line-height:1;margin-right:-2px}
+.seg-lieu{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px}
+.lieu-ico{font-size:22px;line-height:1}
+.emm-row{display:flex;flex-direction:column;gap:8px;margin-top:10px;background:#f8fff8;border:1px solid #c8dfc8;border-radius:8px;padding:10px 12px}
+.e-emm{font-size:12px;color:#2d5a27;line-height:1.5;margin-bottom:2px}
 </style>
 </head>
 <body>
@@ -147,6 +152,11 @@ const FILE_NAME = "qualisilva-data.json";
 const ADRESSE   = "11 rue de Mayenne, 72140 Sillé-le-Guillaume";
 const PALETTE   = ["#2d5a27","#4a7c59","#6b8f71","#8b6914","#5c7a8a","#7a5c8a","#b05030","#2a6080","#888","#3a3a6a"];
 const REGLAGES_DEFAUT = {tauxJour:550, heuresJour:8, tauxKm:0.5, tauxCotis:25.8, prixBombe:0};
+const LIEUX = [
+  {v:"bureau",    l:"Bureau",    i:"💻"},
+  {v:"terrain",   l:"Terrain",   i:"🌲"},
+  {v:"rencontre", l:"Rencontre", i:"🤝"},
+];
 const STATUTS = [
   {v:"facturer", l:"À facturer",     c:"#c0392b"},
   {v:"facture",  l:"Facturé",        c:"#2d5a27"},
@@ -180,22 +190,30 @@ let S = {
 // MIGRATION des anciennes données (rien n'est supprimé :
 // les anciens champs « dépenses / recettes » sont rangés dans « ancien »)
 // ═══════════════════════════════════════════
+function inferLieu(e){
+  if(e.lieu) return e;
+  const tags=Array.isArray(e.tags)?e.tags:(e.tag?[e.tag]:[]);
+  const km=e.deplacement&&Number(e.deplacement.km)>0;
+  const em=/emmen/i.test(e.remarque||"");
+  const lieu=(km||em)?(tags.includes("Prospection")?"rencontre":"terrain"):(tags.includes("Martelage")?"terrain":"bureau");
+  return {...e,lieu,emmenee:!!e.emmenee||(em&&!km),emmeneePar:e.emmeneePar||((em&&/papa/i.test(e.remarque||""))?"Papa":"")};
+}
 function migrateData(data){
   data=data||{};
   const tags=Array.isArray(data.tags)&&data.tags.length?data.tags:S.tags;
   const reglages={...REGLAGES_DEFAUT,...(data.reglages||{})};
   const factures=Array.isArray(data.factures)?data.factures:[];
   const entries=(data.entries||[]).map(e=>{
-    if(Array.isArray(e.tags)) return {intervenants:1,statut:"facturer",bombes:0,frais:[],deplacement:null,remarque:"",dossier:"",...e};
+    if(Array.isArray(e.tags)) return inferLieu({intervenants:1,statut:"facturer",bombes:0,frais:[],deplacement:null,remarque:"",dossier:"",...e});
     const nonFact=["Prospection","Formation/Veille"].includes(e.tag)||!e.dossier;
-    return {
+    return inferLieu({
       id:e.id, date:e.date, heures:Number(e.heures)||0, description:e.description||"",
       tags:e.tag?[e.tag]:[], dossier:e.dossier||"",
       intervenants:1, statut:nonFact?"nonfact":"facturer",
       deplacement:e.deplacement||null, bombes:0, frais:[],
       remarque:e.remarque||"",
       ancien:{tag:e.tag, depenses:e.depenses||[], recettes:e.recettes||[]},
-    };
+    });
   });
   return {version:2, entries, tags, factures, reglages};
 }
@@ -223,6 +241,7 @@ const fmtD = d => { const [y,m,day]=(d||"").split("-"); return `${day}/${m}/${y}
 const esc  = s => String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 const tagCol = lbl => (S.tags.find(t=>t.label===lbl)||{color:"#888"}).color;
 const statut = v => STATUTS.find(s=>s.v===v)||STATUTS[0];
+const lieuOf = v => LIEUX.find(x=>x.v===v);
 const dossiers = () => [...new Set([...S.entries.map(e=>e.dossier),...S.factures.map(f=>f.dossier)].filter(Boolean))].sort((a,b)=>a.localeCompare(b));
 const years = () => [...new Set([...S.entries.map(e=>(e.date||"").slice(0,4)),...S.factures.map(f=>(f.date||"").slice(0,4)),String(new Date().getFullYear())].filter(Boolean))].sort().reverse();
 const inYear = d => (d||"").slice(0,4)===S.year;
@@ -308,10 +327,11 @@ function calcAnalyse(){
   const valeur=heures*tauxH();
   // Niveau 1 : par client et par activité (heures réparties entre les tags d'une entrée)
   const parClient={};
-  const cl=d=>parClient[d]??={h:0,valeur:0,valeur2:0,aFacturer:0,offert:0,nonfact:0,facture:0,frais:0};
+  const cl=d=>parClient[d]??={h:0,valeur:0,valeur2:0,aFacturer:0,offert:0,nonfact:0,facture:0,frais:0,hFact:0};
   E.forEach(e=>{
     const c=cl(e.dossier||"(sans client)");
     c.h+=num(e.heures); c.valeur+=valeurTemps(e); c.valeur2+=valeurEntree(e); c.frais+=fraisTot(e);
+    if(e.statut==="facture") c.hFact+=num(e.heures)*(num(e.intervenants)||1);
     if(e.statut==="facturer") c.aFacturer+=valeurFacturable(e);
     else if(e.statut==="offert") c.offert+=valeurTemps(e);
     else if(e.statut==="nonfact") c.nonfact+=valeurTemps(e);
@@ -326,6 +346,7 @@ function calcAnalyse(){
   const nonfact=sum(E.filter(e=>e.statut==="nonfact"),valeurTemps);
   const resteAFacturer=sum(E.filter(e=>e.statut==="facturer"),valeurFacturable);
   const valeur2=sum(E,valeurEntree);
+  const hFact=sum(E.filter(e=>e.statut==="facture"),e=>num(e.heures)*(num(e.intervenants)||1));
   // Niveau 3
   const ca=honoraires+fraisFactures;
   const cotis=ca*R().tauxCotis/100;
@@ -338,7 +359,7 @@ function calcAnalyse(){
   return {E,F,heures,valeur,parClient,parTag,honoraires,fraisFactures,offert,nonfact,resteAFacturer,
           ca,cotis,route,conso,autres,net,netH:heures>0?net/heures:0,
           netSiFacture,netSiFactureH:heures>0?netSiFacture/heures:0,
-          valeur2,taux:valeur2>0?honoraires/valeur2:0,encaisse,cotisEncaisse:encaisse*R().tauxCotis/100};
+          valeur2,taux:valeur2>0?honoraires/valeur2:0,hFact,prixJourReel:hFact>0?honoraires/(hFact/R().heuresJour):0,encaisse,cotisEncaisse:encaisse*R().tauxCotis/100};
 }
 
 // ═══════════════════════════════════════════
@@ -429,7 +450,7 @@ ${filtered.map(e=>{
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div style="flex:1;min-width:0">
         <div class="e-meta">
-          <span class="e-date">${fmtD(e.date)}</span>
+          ${lieuOf(e.lieu)?`<span class="e-lieu" title="${lieuOf(e.lieu).l}">${lieuOf(e.lieu).i}</span>`:""}<span class="e-date">${fmtD(e.date)}</span>
           ${(e.tags||[]).map(t=>`<span class="badge" style="background:${tagCol(t)}">${esc(t)}</span>`).join("")}
           ${e.dossier?`<span class="badge-dos">${esc(e.dossier)}</span>`:""}
         </div>
@@ -439,7 +460,8 @@ ${filtered.map(e=>{
           <span style="font-size:11px;color:#8b6914">⏱ ${fmt(valeurEntree(e))}</span>
         </div>
         <div class="e-desc">${esc(e.description)}</div>
-        ${parts.length?`<div class="e-dep">📤 ${parts.join(" · ")} <strong>= ${fmt(fraisTot(e))}</strong></div>`:""}
+        ${e.emmenee?`<div class="e-emm">🚙 Emmenée${e.emmeneePar?" par "+esc(e.emmeneePar):""} · pas de frais km</div>`:""}
+        ${parts.length?`<div class="e-dep">📤 ${parts.join(" · ")}${fraisTot(e)>0?` <strong>= ${fmt(fraisTot(e))}</strong>`:""}</div>`:""}
         ${e.remarque?`<div class="e-rem">💬 ${esc(e.remarque)}</div>`:""}
       </div>
       <div class="e-acts">
@@ -481,6 +503,13 @@ function renderSaisie(){
     <label class="lbl">Client</label>
     <input class="inp" type="text" id="f-dos" value="${esc(f.dossier)}" placeholder="Choisir ou taper un nouveau client" list="dos-list" autocomplete="off">
     <datalist id="dos-list">${dossiers().map(x=>`<option value="${esc(x)}">`).join("")}</datalist>
+  </div>
+  <div class="fg"><label class="lbl">Où étais-tu ?</label>
+    <div class="seg" id="seg-lieu">${LIEUX.map(x=>`<button type="button" class="seg-b seg-lieu${f.lieu===x.v?" on":""}" data-lieu="${x.v}"><span class="lieu-ico">${x.i}</span>${x.l}</button>`).join("")}</div>
+    <div class="emm-row" id="emm-row" style="${f.lieu&&f.lieu!=="bureau"?"":"display:none"}">
+      <label class="dep-check" style="font-size:14px"><input type="checkbox" id="f-emm" ${f.emmenee?"checked":""}> 🚙 Emmenée par quelqu'un (pas de frais km)</label>
+      <input class="inp" type="text" id="f-emm-par" value="${esc(f.emmeneePar||"")}" placeholder="Par qui ? (facultatif)" autocomplete="off" style="${f.emmenee?"":"display:none"}">
+    </div>
   </div>
   <div class="fg"><label class="lbl">Statut</label>
     <div class="seg seg-grid" id="seg-st">${STATUTS.map(s=>`<button type="button" class="seg-b${f.statut===s.v?" on":""}" data-st="${s.v}" style="${f.statut===s.v?`background:${s.c};border-color:${s.c}`:""}">${s.l}</button>`).join("")}</div>
@@ -575,6 +604,11 @@ function factCandidates(ff){
   return S.entries.filter(e=>e.dossier===ff.dossier&&(e.statut==="facturer"||(e.statut==="facture"&&ff.numeroOrig&&e.factureNum===ff.numeroOrig)))
     .sort((a,b)=>a.date.localeCompare(b.date));
 }
+// Nouvelle facture : les entrées « À facturer » sont pré-cochées.
+// Facture existante : seules les entrées déjà rattachées à cette facture sont cochées.
+function defaultChecked(e,ff){
+  return ff.numeroOrig ? (e.statut==="facture"&&e.factureNum===ff.numeroOrig) : e.statut==="facturer";
+}
 function factEntriesHtml(ff){
   if(!ff.dossier) return `<div class="note" style="margin-bottom:12px">Choisis le client pour cocher les entrées couvertes par cette facture.</div>`;
   const c=factCandidates(ff);
@@ -582,7 +616,7 @@ function factEntriesHtml(ff){
   const sel=ff.sel||{};
   return `<div class="fg"><label class="lbl">Entrées couvertes par cette facture</label>
     <div class="note" style="margin-bottom:6px">Les entrées cochées passeront au statut « Facturé ».</div>
-    ${c.map(e=>{const chk=sel[e.id]!==undefined?sel[e.id]:(e.statut==="facturer"||e.factureNum===ff.numeroOrig);return `<label class="fchk"><input type="checkbox" data-fsel="${e.id}" ${chk?"checked":""}><span style="flex:1">${fmtD(e.date)} · ${fmtH(e.heures)}${num(e.intervenants)>1?" ×2":""} · ${esc(e.description)}</span><span style="color:#8b6914;white-space:nowrap">${fmt0(valeurFacturable(e))}</span></label>`;}).join("")}
+    ${c.map(e=>{const chk=sel[e.id]!==undefined?sel[e.id]:defaultChecked(e,ff);return `<label class="fchk"><input type="checkbox" data-fsel="${e.id}" ${chk?"checked":""}><span style="flex:1">${fmtD(e.date)} · ${fmtH(e.heures)}${num(e.intervenants)>1?" ×2":""} · ${esc(e.description)}</span><span style="color:#8b6914;white-space:nowrap">${fmt0(valeurFacturable(e))}</span></label>`;}).join("")}
   </div>`;
 }
 function readFactForm(){
@@ -627,12 +661,12 @@ function renderAnalyse(a){
     <div class="note" style="margin-bottom:8px">Temps offert : <strong>${fmt0(a.offert)}</strong> · non facturable : <strong>${fmt0(a.nonfact)}</strong> · encore à facturer : <strong>${fmt0(a.resteAFacturer)}</strong></div>
   </div>
   <div style="overflow-x:auto">
-    <table class="tbl tbl-tight"><thead><tr>${["Client","Heures","Valeur","Facturé","Taux","À fact."].map(th).join("")}</tr></thead>
-    <tbody>${clients.map(([d,c])=>`<tr><td style="font-weight:bold">${esc(d)}</td><td style="text-align:right">${fmtH(c.h)}</td><td style="text-align:right">${fmt0(c.valeur2)}</td><td style="text-align:right;color:#27ae60">${fmt0(c.facture)}</td><td style="text-align:right;font-weight:bold">${c.valeur2>0?Math.round(c.facture/c.valeur2*100)+" %":"—"}</td><td style="text-align:right;color:#c0392b">${c.aFacturer>0.5?fmt0(c.aFacturer):"—"}</td></tr>`).join("")}
-    <tr style="background:#f5f0e6;font-weight:bold"><td>Total</td><td style="text-align:right">${fmtH(a.heures)}</td><td style="text-align:right">${fmt0(a.valeur2)}</td><td style="text-align:right">${fmt0(a.honoraires)}</td><td style="text-align:right">${Math.round(a.taux*100)} %</td><td style="text-align:right">${fmt0(a.resteAFacturer)}</td></tr>
+    <table class="tbl tbl-tight"><thead><tr>${["Client","Heures","Facturé","Taux","€/j réel","À fact."].map(th).join("")}</tr></thead>
+    <tbody>${clients.map(([d,c])=>{const pj=c.hFact>0?c.facture/(c.hFact/R().heuresJour):0;return `<tr><td style="font-weight:bold">${esc(d)}</td><td style="text-align:right">${fmtH(c.h)}</td><td style="text-align:right;color:#27ae60">${fmt0(c.facture)}</td><td style="text-align:right;font-weight:bold">${c.valeur2>0?Math.round(c.facture/c.valeur2*100)+" %":"—"}</td><td style="text-align:right;font-weight:bold;color:${pj>=R().tauxJour-0.5?"#27ae60":"#8b6914"}">${pj>0?fmt0(pj):"—"}</td><td style="text-align:right;color:#c0392b">${c.aFacturer>0.5?fmt0(c.aFacturer):"—"}</td></tr>`;}).join("")}
+    <tr style="background:#f5f0e6;font-weight:bold"><td>Total</td><td style="text-align:right">${fmtH(a.heures)}</td><td style="text-align:right">${fmt0(a.honoraires)}</td><td style="text-align:right">${Math.round(a.taux*100)} %</td><td style="text-align:right">${a.prixJourReel>0?fmt0(a.prixJourReel):"—"}</td><td style="text-align:right">${fmt0(a.resteAFacturer)}</td></tr>
     </tbody></table>
   </div>
-  <div class="note" style="padding:8px 16px 12px">Taux = honoraires facturés ÷ valeur du temps (journées en binôme comptées pour les deux intervenants). « À facturer » = valeur des entrées encore au statut « À facturer ».</div>
+  <div class="note" style="padding:8px 16px 12px">Taux = honoraires facturés ÷ valeur de tout le temps passé (binôme compté pour les deux). <strong>€/j réel</strong> = honoraires facturés ÷ journées couvertes par les factures (entrées « Facturé », analyse comprise, 8 h = 1 jour) : c'est ce que te rapporte réellement une journée de travail, à comparer à ton tarif de ${fmt0(R().tauxJour)}. « À fact. » = valeur des entrées encore « À facturer ».</div>
 </div>
 
 <div class="card">
@@ -735,7 +769,10 @@ function readForm(){
     dossier: (g("f-dos")?.value||"").trim(),
     intervenants: S.form.intervenants||1,
     statut: S.form.statut||"facturer",
-    deplacement: dep,
+    deplacement: dep&&(dep.km>0||dep.peage>0)?dep:null,
+    lieu: S.form.lieu||"",
+    emmenee: S.form.lieu&&S.form.lieu!=="bureau"?!!g("f-emm")?.checked:false,
+    emmeneePar: S.form.lieu&&S.form.lieu!=="bureau"&&g("f-emm")?.checked?(g("f-emm-par")?.value||"").trim():"",
     bombes: parseNum(g("f-bombes")?.value),
     frais: S.form.frais||[],
     remarque: g("f-rem")?.value||"",
@@ -795,9 +832,9 @@ function exportJSON(){
   toast("⬇ Sauvegarde téléchargée");
 }
 function exportCSV(){
-  const head=["Date","Client","Activités","Description","Heures","Intervenants","Statut","N° facture","Valeur","Km A/R","Frais km","Péage","Bombes","Consommables","Autres frais","Détail autres frais","Total frais","Remarque"];
+  const head=["Date","Lieu","Emmenée par","Client","Activités","Description","Heures","Intervenants","Statut","N° facture","Valeur","Km A/R","Frais km","Péage","Bombes","Consommables","Autres frais","Détail autres frais","Total frais","Remarque"];
   const rows=[...S.entries].sort((a,b)=>a.date.localeCompare(b.date)).map(e=>[
-    e.date,e.dossier,(e.tags||[]).join(", "),e.description,csvN(e.heures),e.intervenants||1,statut(e.statut).l,e.factureNum||"",
+    e.date,lieuOf(e.lieu)?.l||"",e.emmenee?(e.emmeneePar||"oui"):"",e.dossier,(e.tags||[]).join(", "),e.description,csvN(e.heures),e.intervenants||1,statut(e.statut).l,e.factureNum||"",
     csvN(valeurEntree(e)),
     e.deplacement?csvN(e.deplacement.km):"",csvN(fraisKm(e)),csvN(peage(e)),csvN(e.bombes),csvN(fraisConso(e)),csvN(fraisAutres(e)),
     (e.frais||[]).map(f=>`${f.libelle} : ${csvN(f.montant)}`).join(" | "),csvN(fraisTot(e)),e.remarque]);
@@ -830,7 +867,7 @@ function bindLogin(){
 }
 
 function newForm(){
-  return {date:today(),description:"",tags:[],dossier:"",heures:8,intervenants:1,statut:"facturer",deplacement:null,bombes:0,frais:[],remarque:""};
+  return {date:today(),description:"",tags:[],dossier:"",heures:8,lieu:"",emmenee:false,emmeneePar:"",intervenants:1,statut:"facturer",deplacement:null,bombes:0,frais:[],remarque:""};
 }
 
 function bindApp(){
@@ -877,6 +914,20 @@ function bindApp(){
       const sel=S.form.tags.includes(l);
       b.className="tp"+(sel?" on":""); b.style.background=sel?(t?.color||"#888"):""; b.style.borderColor=sel?(t?.color||"#888"):"transparent";
     });
+    all("[data-lieu]",b=>b.onclick=()=>{
+      S.form.lieu=b.dataset.lieu;
+      document.querySelectorAll("[data-lieu]").forEach(x=>x.className="seg-b seg-lieu"+(x===b?" on":""));
+      const dehors=S.form.lieu!=="bureau";
+      document.getElementById("emm-row").style.display=dehors?"":"none";
+      if(dehors&&!document.getElementById("f-emm").checked&&!S.showDep){
+        openDep(true);
+        if(!parseNum(document.getElementById("f-km").value)){
+          const t=lastTripFor((document.getElementById("f-dos").value||"").trim());
+          if(t){setDepFields(t);S.depAuto=true;document.getElementById("dep-auto").style.display="";}
+        }
+      }
+    });
+    on("f-emm","onchange",()=>{document.getElementById("f-emm-par").style.display=document.getElementById("f-emm").checked?"":"none";});
     all("[data-int]",b=>b.onclick=()=>{S.form.intervenants=Number(b.dataset.int);document.querySelectorAll("[data-int]").forEach(x=>x.className="seg-b"+(x===b?" on":""));});
     all("[data-st]",b=>b.onclick=()=>{
       S.form.statut=b.dataset.st;
@@ -912,6 +963,11 @@ function bindApp(){
       const f=readForm();
       if(!f.description.trim()){alert("Merci d'ajouter une description.");return;}
       if(!f.tags.length){alert("Merci de choisir au moins une activité.");return;}
+      if(!f.lieu){alert("Indique où tu étais : bureau, terrain ou rencontre.");return;}
+      if(f.lieu!=="bureau"&&!f.emmenee&&!(f.deplacement&&num(f.deplacement.km)>0)){
+        alert("Tu étais en déplacement : indique les km dans « Déplacement », ou coche « Emmenée par quelqu'un ».");
+        openDep(true); return;
+      }
       const wasEdit=!!S.editId;
       if(wasEdit) S.entries=S.entries.map(e=>e.id===S.editId?{...f,id:S.editId}:e);
       else S.entries.push({...f,id:Date.now()});
@@ -937,7 +993,7 @@ function bindApp(){
     const cand=new Set(factCandidates(ff).map(e=>e.id));
     S.entries=S.entries.map(e=>{
       if(!cand.has(e.id)) return e;
-      const chk=ff.sel[e.id]!==undefined?ff.sel[e.id]:(e.statut==="facturer"||e.factureNum===ff.numeroOrig);
+      const chk=ff.sel[e.id]!==undefined?ff.sel[e.id]:defaultChecked(e,ff);
       if(chk) return {...e,statut:"facture",factureNum:f.numero};
       if(e.statut==="facture"){const {factureNum,...r}=e;return {...r,statut:"facturer"};}
       return e;
