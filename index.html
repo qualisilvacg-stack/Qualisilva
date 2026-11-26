@@ -193,6 +193,43 @@ const toast = msg => {
 };
 
 // ═══════════════════════════════════════════
+// EXPORT (lecture seule : ne modifie ni ne sauvegarde aucune donnée)
+// ═══════════════════════════════════════════
+function downloadFile(name, content, mime){
+  const blob=new Blob([content],{type:mime});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download=name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},1000);
+}
+const exportStamp = () => new Date().toISOString().slice(0,10);
+function exportJSON(){
+  const data={exporte_le:new Date().toISOString(),entries:S.entries,tags:S.tags};
+  downloadFile(`qualisilva-export-${exportStamp()}.json`, JSON.stringify(data,null,2), "application/json");
+  toast("⬇ Export JSON téléchargé");
+}
+function exportCSV(){
+  const q = v => { const t=(v===null||v===undefined)?"":String(v); return '"'+t.replace(/"/g,'""')+'"'; };
+  const num = n => (Math.round((Number(n)||0)*100)/100).toString().replace(".",",");
+  const head=["Date","Tag","Dossier","Description","Heures","Km","Péage","Aller-retour","Frais km","Total dépenses","Détail dépenses","Total recettes","Détail recettes","Remarque"];
+  const rows=[...S.entries].sort((a,b)=>a.date.localeCompare(b.date)).map(e=>{
+    const d=e.deplacement;
+    return [
+      e.date, e.tag, e.dossier||"", e.description||"", num(e.heures),
+      d?num(d.km):"", d?num(d.peage):"", d?(d.allerRetour?"oui":"non"):"",
+      num(calcKm(d)), num(totDep(e)),
+      (e.depenses||[]).map(x=>`${x.libelle} : ${num(x.montant)}`).join(" | "),
+      num(totRec(e)),
+      (e.recettes||[]).map(x=>`${x.libelle} : ${num(x.montant)}`).join(" | "),
+      e.remarque||""
+    ].map(q).join(";");
+  });
+  const csv="\ufeff"+[head.map(q).join(";"),...rows].join("\r\n");
+  downloadFile(`qualisilva-export-${exportStamp()}.csv`, csv, "text/csv;charset=utf-8");
+  toast("⬇ Export CSV téléchargé");
+}
+
+// ═══════════════════════════════════════════
 // GOOGLE DRIVE
 // ═══════════════════════════════════════════
 let saveTimer=null;
@@ -481,6 +518,16 @@ function renderAnalyse(st){
     </div>
     ${nf.map(e=>`<div style="font-size:12px;padding:4px 0;border-bottom:1px solid #eee;color:#555">${fmtD(e.date)} — ${e.description} <span style="color:#aaa">(${e.heures}h)</span></div>`).join("")}
   </div>
+</div>
+<div class="card">
+  <div class="card-hdr" style="border-color:#2d5a27"><h3>⬇ Exporter mes données</h3></div>
+  <div class="card-body">
+    <div style="font-size:12px;color:#666;margin-bottom:10px">${S.entries.length} entrées. L'export télécharge une copie ; tes données restent inchangées dans ton Drive.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" id="btn-exp-csv" style="flex:1;padding:10px;border-radius:8px;border:none;background:#2d5a27;color:#fff;font-weight:bold;cursor:pointer">CSV (tableur)</button>
+      <button type="button" id="btn-exp-json" style="flex:1;padding:10px;border-radius:8px;border:1px solid #2d5a27;background:#fff;color:#2d5a27;font-weight:bold;cursor:pointer">JSON (sauvegarde)</button>
+    </div>
+  </div>
 </div>`;}
 
 function renderTags(st){
@@ -606,6 +653,8 @@ function bindApp(){
   on("nav-journal","onclick",()=>{S.view="journal";render();});
   on("nav-analyse","onclick",()=>{S.view="analyse";render();});
   on("nav-tags",   "onclick",()=>{S.view="tags";render();});
+  on("btn-exp-csv","onclick",exportCSV);
+  on("btn-exp-json","onclick",exportJSON);
   on("btn-new",    "onclick",()=>{
     S.form={date:new Date().toISOString().slice(0,10),description:"",tag:S.tags[0]?.label||"",dossier:"",heures:8,deplacement:null,depenses:[],recettes:[],remarque:""};
     S.showDep=false; S.editId=null; S.view="saisie"; render();
