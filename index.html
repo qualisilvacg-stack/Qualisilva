@@ -59,7 +59,14 @@ button,input,textarea,select{font-family:Georgia,serif}
 .tbl td{padding:7px 8px;border-top:1px solid #eee;text-align:right}
 .tbl th:first-child,.tbl td:first-child{text-align:left}
 .tbl tr.tot{background:#f5f0e6;font-weight:bold}
-.tbl.tight{font-size:11px}.tbl.tight th{padding:6px 4px;font-size:9px}.tbl.tight td{padding:6px 4px}.tbl.tight td:first-child{padding-left:10px}
+.tbl.cli{table-layout:fixed;font-size:11px}
+.tbl.cli th{padding:6px 3px;font-size:8px;letter-spacing:0;line-height:1.25;vertical-align:bottom}
+.tbl.cli td{padding:6px 3px;white-space:nowrap}
+.tbl.cli th:first-child,.tbl.cli td:first-child{padding-left:12px}
+.tbl.cli td:first-child{white-space:normal;font-size:10px;line-height:1.25;color:#1c2e1c}
+.tbl tr.muted td{color:#aaa}
+.vide{color:#ccc;font-weight:normal}
+.tbl tr.tot td{color:inherit}
 .big-row{display:flex;gap:10px;margin-bottom:12px}
 .big{flex:1;text-align:center;background:#f5f0e6;border-radius:8px;padding:10px 6px}
 .big-v{font-size:20px;font-weight:bold;color:#1c2e1c}
@@ -434,7 +441,7 @@ function renderApp(){
   </div>
   <div class="kpis">
     ${kpi("Heures "+S.year,fmtH(a.heures),"#e8e4d8")}${kpi("Valeur temps",fmt0(a.valeur),"#c8b46a")}
-    ${kpi("Facturé",fmt0(a.honoraires),"#5fb87a")}${kpi("Net / heure",a.heures>0?fmt(a.netH):"—",a.netH>=0?"#5fb87a":"#e07070")}
+    ${kpi("Honoraires",fmt0(a.honoraires),"#5fb87a")}${kpi("Net / heure",a.heures>0?fmt(a.netH):"—",a.netH>=0?"#5fb87a":"#e07070")}
   </div>
 </div>
 <div class="main" id="main-content">${VUES[S.view]()}</div>
@@ -596,10 +603,7 @@ function renderFactures(){
 
 // ── Analyses ─────────────────────────────────────────────────
 function renderAnalyse(a){
-  const clients=Object.entries(a.parClient).sort((x,y)=>y[1].valeur-x[1].valeur);
   const tagMax=Math.max(...Object.values(a.parTag),1);
-  const prixJour=c=>c.hFact>0?c.facture/(c.hFact/R().heuresJour):0;
-  const ligne=(nom,h,fact,taux,pj,af)=>`<tr><td class="b">${nom}</td><td>${fmtH(h)}</td><td class="green">${fmt0(fact)}</td><td class="b">${taux}</td><td class="b ${pj>=R().tauxJour-0.5?"green":"gold"}">${pj>0?fmt0(pj):"—"}</td><td class="red">${af>0.5?fmt0(af):"—"}</td></tr>`;
   const bilan=[["Chiffre d'affaires facturé (honoraires + frais)",fmt(a.ca)],
     [`– Cotisations Urssaf (${dec(R().tauxCotis)} %)`,"– "+fmt(a.cotis),"red"],["– Km et péages","– "+fmt(a.route),"red"],
     ["– Consommables","– "+fmt(a.conso),"red"],["– Autres frais","– "+fmt(a.autres),"red"]];
@@ -612,17 +616,7 @@ function renderAnalyse(a){
       <div class="bar-track"><div class="bar-fill" style="width:${Math.round(h/tagMax*100)}%;background:${tagCol(t)}"></div></div></div>`).join("")}
     <div class="note">Une entrée avec plusieurs activités est répartie à parts égales entre elles.</div>`)
 
-  + card("2 · Ton taux de facturation","#8b6914",
-    `<div class="card-body" style="padding-bottom:6px">
-      <div class="big-row">${bigBox(fmtP(a.taux),"de ton temps facturé","#2d5a27")}${bigBox(fmt0(a.honoraires),"honoraires facturés")}</div>
-      <div class="note" style="margin-bottom:8px">Temps offert : <strong>${fmt0(a.offert)}</strong> · non facturable : <strong>${fmt0(a.nonfact)}</strong> · encore à facturer : <strong>${fmt0(a.resteAFacturer)}</strong></div>
-    </div>
-    <div style="overflow-x:auto"><table class="tbl tight">
-      <thead><tr><th>Client</th><th>Heures</th><th>Facturé</th><th>Taux</th><th>€/j réel</th><th>À fact.</th></tr></thead>
-      <tbody>${clients.map(([d,c])=>ligne(esc(d),c.h,c.facture,c.valeur2>0?fmtP(c.facture/c.valeur2):"—",prixJour(c),c.aFacturer)).join("")}
-      <tr class="tot"><td>Total</td><td>${fmtH(a.heures)}</td><td>${fmt0(a.honoraires)}</td><td>${fmtP(a.taux)}</td><td>${a.prixJourReel>0?fmt0(a.prixJourReel):"—"}</td><td>${fmt0(a.resteAFacturer)}</td></tr></tbody>
-    </table></div>
-    <div class="note" style="padding:8px 16px 12px">Taux = honoraires facturés ÷ valeur de tout le temps passé (binôme compté pour les deux). <strong>€/j réel</strong> = honoraires facturés ÷ journées couvertes par les factures (entrées « Facturé », analyse comprise, ${R().heuresJour} h = 1 jour) : c'est ce que te rapporte réellement une journée de travail, à comparer à ton tarif de ${fmt0(R().tauxJour)}. « À fact. » = valeur des entrées encore « À facturer ».</div>`, null)
+  + carteTaux(a)
 
   + card("3 · Ce que tu gagnes vraiment","#2a6080",
     `<table class="tbl"><tbody>
@@ -640,6 +634,34 @@ function renderAnalyse(a){
       <button type="button" class="btn-exp" id="btn-exp-km">Relevé km (CSV)</button>
       <button type="button" class="btn-exp alt" id="btn-exp-json">Sauvegarde (JSON)</button>
     </div>`);
+}
+
+// Carte 2 : clients facturés ou à facturer en tête, puis le temps non facturé (en gris)
+function carteTaux(a){
+  const nb=x=>milliers(String(Math.round(x)));            // montants sans « € » : l'unité est dite sous le tableau
+  const si=(ok,v)=>ok?v:`<span class="vide">—</span>`;
+  const actif=c=>c.facture>0.5||c.aFacturer>0.5;
+  const ligne=(nom,c,taux,pj,cls)=>`<tr class="${cls}"><td>${nom}</td><td>${dec(Math.round(c.h*10)/10)}</td>
+    <td class="green">${si(c.facture>0.5,nb(c.facture))}</td><td class="b">${si(c.facture>0.5,taux)}</td>
+    <td class="b ${pj>=R().tauxJour-0.5?"green":"gold"}">${si(pj>0,nb(pj))}</td><td class="red">${si(c.aFacturer>0.5,nb(c.aFacturer))}</td></tr>`;
+  const clients=Object.entries(a.parClient).sort(([,x],[,y])=>actif(y)-actif(x)||y.h-x.h);
+  const lignes=clients.map(([d,c])=>ligne(actif(c)?`<b>${esc(d)}</b>`:esc(d), c, fmtP(c.valeur2>0?c.facture/c.valeur2:0),
+    c.hFact>0?c.facture/(c.hFact/R().heuresJour):0, actif(c)?"":"muted")).join("");
+  const total=ligne("Total",{h:a.heures,facture:a.honoraires,aFacturer:a.resteAFacturer},fmtP(a.taux),a.prixJourReel,"tot");
+  return card("2 · Ton taux de facturation","#8b6914",
+    `<div class="card-body" style="padding-bottom:6px">
+      <div class="big-row">${bigBox(fmtP(a.taux),"de ton temps facturé","#2d5a27")}${bigBox(fmt0(a.honoraires),"honoraires facturés")}</div>
+      <div class="note" style="margin-bottom:8px">Honoraires <strong>${fmt0(a.honoraires)}</strong> + frais refacturés <strong>${fmt0(a.fraisFactures)}</strong> = <strong>${fmt0(a.ca)}</strong> facturés HT.<br>
+      Temps offert : <strong>${fmt0(a.offert)}</strong> · non facturable : <strong>${fmt0(a.nonfact)}</strong> · encore à facturer : <strong>${fmt0(a.resteAFacturer)}</strong></div>
+    </div>
+    <table class="tbl cli">${[40,10,14,10,12,14].map(w=>`<col style="width:${w}%">`).join("")}
+      <thead><tr><th>Client</th><th>Heures</th><th>Hono&shy;raires</th><th>Taux</th><th>€/jour réel</th><th>À fac&shy;turer</th></tr></thead>
+      <tbody>${lignes}${total}</tbody>
+    </table>
+    <div class="note" style="padding:8px 16px 12px">Montants en € HT. Tout ton temps est valorisé au même tarif (${fmt0(R().tauxJour)} / ${R().heuresJour} h) ; c'est la facture qui fait foi.<br>
+      <strong>Taux</strong> : honoraires ÷ valeur de tout le temps passé chez ce client (binôme compté pour les deux).<br>
+      <strong>€/jour réel</strong> : honoraires ÷ journées couvertes par ses factures, analyse comprise. C'est ce que te rapporte vraiment une journée, à comparer à tes ${fmt0(R().tauxJour)}.<br>
+      <strong>À facturer</strong> : valeur à ton tarif des entrées pas encore facturées.</div>`, null);
 }
 
 // ── Réglages ─────────────────────────────────────────────────
